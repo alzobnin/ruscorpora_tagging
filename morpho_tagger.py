@@ -9,7 +9,7 @@ import sys
 import lemmer
 from modules import common, element_stack, fs_walk
 
-OUTPUT_ENCODING = 'cp-1251'
+OUTPUT_ENCODING = 'cp1251'
 LEMMERS = {}
 default_lang = ''
 
