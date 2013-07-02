@@ -3,13 +3,12 @@
 
 import codecs
 import os
+import types
 import xml.sax
 import re
 import optparse
 from modules import fs_walk, element_stack
 from modules import common
-
-OUTPUT_ENCODING = 'cp1251'
 
 word_break_tags = [u'sub', u'sup']
 
@@ -102,7 +101,7 @@ class TokenizerHandler(xml.sax.handler.ContentHandler):
         self.element_stack.addChars(content)
 
     def startDocument(self):
-        self.out.write('<?xml version="1.0" encoding="%s"?>\n' % OUTPUT_ENCODING)
+        self.out.write('<?xml version="1.0" encoding="%s"?>\n' % common.OUTPUT_ENCODING)
 
     def endDocument(self):
         self.collapse_element_stack()
@@ -268,12 +267,15 @@ class TokenizerHandler(xml.sax.handler.ContentHandler):
         return text_to_flush
 
 
-def convert(inpath, outpath, indent=''):
-    print '%s%s' % (indent, os.path.basename(inpath)),
-    out = codecs.getwriter(OUTPUT_ENCODING)(file(outpath, 'wb'), 'xmlcharrefreplace')
+def convert(inpath, outpath):
+    out = outpath
+    if isinstance(outpath, str):
+        out = codecs.getwriter(common.OUTPUT_ENCODING)(file(outpath, 'wb'), 'xmlcharrefreplace')
     tokenizer_handler = TokenizerHandler(out)
     try:
-        xml.sax.parse(inpath, tokenizer_handler)
+        parser = xml.sax.make_parser()
+        parser.setContentHandler(tokenizer_handler)
+        parser.parse(inpath)
         print '- OK'
     except xml.sax.SAXException:
         print ' - FAILED'

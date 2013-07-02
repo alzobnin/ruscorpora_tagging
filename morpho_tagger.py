@@ -2,14 +2,14 @@
 # http://ruscorpora.ru
 
 import codecs
+from optparse import OptionParser
 import os
 import re
+import types
 import xml.sax
-import sys
 import lemmer
 from modules import common, element_stack, fs_walk
 
-OUTPUT_ENCODING = 'cp-1251'
 LEMMERS = {}
 default_lang = ''
 
@@ -32,7 +32,7 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
         self.do_not_parse_sentence = False
 
     def startDocument(self):
-        self.out.write('<?xml version="1.0" encoding="%s"?>\n' % OUTPUT_ENCODING)
+        self.out.write('<?xml version="1.0" encoding="%s"?>\n' % common.OUTPUT_ENCODING)
 
     def endDocument(self):
         self.collapse_element_stack()
@@ -198,29 +198,58 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
                 tags.append(('tag_open_close', 'ana', features))
         return tags
 
-
-
-def convert(inpath, outpath, indent=''):
-    print '%s%s' % (indent, os.path.basename(inpath)),
-    out = codecs.getwriter(OUTPUT_ENCODING)(file(outpath, 'wb'), 'xmlcharrefreplace')
+def convert(inpath, outpath):
+    out = outpath
 
     for key in LEMMERS.keys():
         if LEMMERS[key] != None:
             LEMMERS[key].Reset()
 
     try:
-        tagger = MorphoTaggerHandler(out)
-        xml.sax.parse(inpath, tagger)
+        tagger_handler = MorphoTaggerHandler(out)
+        parser = xml.sax.make_parser()
+        parser.setContentHandler(tagger_handler)
+        parser.parse(inpath)
         print ' - OK'
     except xml.sax.SAXException:
         print ' - FAILED'
 
+def initialize_lemmers(in_options):
+    print 'Initializing...',
+    global LEMMERS
 
-def main():
-    from optparse import OptionParser
+    # first parameter options.lemmer deleted
+    LEMMERS = {
+        "ru": lemmer.Lemmer(["ru"], in_options.semdict, in_options.addpath, in_options.delpath,
+                            full=in_options.full, reallyAdd=in_options.addFixList),
+        "en": lemmer.Lemmer(["en"], full=in_options.full),
+        "de": lemmer.Lemmer(["de"], full=in_options.full),
+        "uk": lemmer.Lemmer(["uk"], full=in_options.full),
+        "be": lemmer.Lemmer(["be"], full=in_options.full),
+        "chu": lemmer.Lemmer(["chu"], full=in_options.full),
+        "fr": lemmer.Lemmer(["fr"], full=in_options.full),
+        "es": lemmer.Lemmer(["es"], full=in_options.full),
+        "it": lemmer.Lemmer(["it"], full=in_options.full),
+        "pt": lemmer.Lemmer(["pt"], full=in_options.full),
+        "ro": lemmer.Lemmer(["ro"], full=in_options.full),
+        "cs": lemmer.Lemmer(["cs"], full=in_options.full),
+        "bg": lemmer.Lemmer(["bg"], full=in_options.full),
+        "": lemmer.Lemmer([], full=in_options.full),
+    }
+    LEMMERS["rus"] = LEMMERS["ru"]
+    LEMMERS["eng"] = LEMMERS["en"]
+    LEMMERS["ger"] = LEMMERS["de"]
+    LEMMERS["ukr"] = LEMMERS["uk"]
+    LEMMERS["bel"] = LEMMERS["be"]
 
-    usage_string = 'Usage: morpho_tagger.py --input <input path> --output <output path>'
-    parser = OptionParser(usage=usage_string)
+    if in_options.lang and in_options.lang in LEMMERS:
+        global default_lang
+        default_lang = in_options.lang
+
+    print 'done!'
+
+def configure_option_parser(in_usage_string=''):
+    parser = OptionParser(usage=in_usage_string)
 
     parser.add_option("--input", dest="input", help="input path")
     parser.add_option("--output", dest="output", help="output path")
@@ -232,51 +261,21 @@ def main():
                       help="use full morphology")
     parser.add_option("--addFixList", action="store_true", dest="addFixList", default=False,
                       help="add fix list analyses instead of replacing analyses from lemmer")
+    return parser
 
+def main():
+    usage_string = 'Usage: morpho_tagger.py --input <input path> --output <output path> [options]'
+    parser = configure_option_parser(usage_string)
     (options, args) = parser.parse_args()
-
-    global errwriter
-    errwriter = codecs.getwriter("utf-8")(sys.stderr, "xmlcharrefreplace")
 
     if not options.input or not options.output:
         parser.print_help()
         exit(0)
 
+    initialize_lemmers(options)
+
     inpath = os.path.abspath(options.input)
     outpath = os.path.abspath(options.output)
-
-    print 'Initializing...',
-    global LEMMERS
-
-    # first parameter options.lemmer deleted
-    LEMMERS = {
-        "ru": lemmer.Lemmer(["ru"], options.semdict, options.addpath, options.delpath,
-                            full=options.full, reallyAdd=options.addFixList),
-        "en": lemmer.Lemmer(["en"], full=options.full),
-        "de": lemmer.Lemmer(["de"], full=options.full),
-        "uk": lemmer.Lemmer(["uk"], full=options.full),
-        "be": lemmer.Lemmer(["be"], full=options.full),
-        "chu": lemmer.Lemmer(["chu"], full=options.full),
-        "fr": lemmer.Lemmer(["fr"], full=options.full),
-        "es": lemmer.Lemmer(["es"], full=options.full),
-        "it": lemmer.Lemmer(["it"], full=options.full),
-        "pt": lemmer.Lemmer(["pt"], full=options.full),
-        "ro": lemmer.Lemmer(["ro"], full=options.full),
-        "cs": lemmer.Lemmer(["cs"], full=options.full),
-        "bg": lemmer.Lemmer(["bg"], full=options.full),
-        "": lemmer.Lemmer([], full=options.full),
-    }
-    LEMMERS["rus"] = LEMMERS["ru"]
-    LEMMERS["eng"] = LEMMERS["en"]
-    LEMMERS["ger"] = LEMMERS["de"]
-    LEMMERS["ukr"] = LEMMERS["uk"]
-    LEMMERS["bel"] = LEMMERS["be"]
-
-    if options.lang and options.lang in LEMMERS:
-        global default_lang
-        default_lang = options.lang
-
-    print 'done!'
 
     if os.path.isdir(inpath):
         fs_walk.process_directory(inpath, outpath, convert)
