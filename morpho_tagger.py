@@ -118,9 +118,12 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
         clearword = word.replace(u'\u0300', '').replace(u'\u0301', '').replace(pretty_apostrophe,
                                                                                apostrophe).strip()
         if number_re.match(clearword):
-            tag = ('tag_open', 'ana', 'lex="%s" gr="NUM,ciph"' % common.quoteattr(clearword))
+            tag = ('tag_open_close', 'ana', 'lex="%s" gr="NUM,ciph"' % common.quoteattr(clearword))
+            self.element_stack.insert_tag_into_content(in_tag_indices[0] + 1, in_coordinates[0], tag)
+            return
         elif not clearword or self.lemmer == None:
-            tag = ('tag_open', 'ana', 'lex="?" gr="NONLEX"')
+            tag = ('tag_open_close', 'ana', 'lex="?" gr="NONLEX"')
+            self.element_stack.insert_tag_into_content(in_tag_indices[0] + 1, in_coordinates[0], tag)
         else:
             word_for_parse = clearword
             COMPOUND_WORD_DELIMITER = '\-+|\'|%s' % pretty_apostrophe
