@@ -3,7 +3,6 @@
 
 import codecs
 import os
-import types
 import xml.sax
 import re
 import optparse
@@ -151,12 +150,12 @@ class TokenizerHandler(xml.sax.handler.ContentHandler):
             for word in sentence:
                 if word[1] == 'word':
                     coordinates = word[2:]
-                    begin_element = self.find_tag_region_begin(coordinates, False)
+                    begin_element = self.find_region_begin(coordinates, False)
                     word_open_index = \
                         self.element_stack.insert_tag_into_content(begin_element,
                                                                    coordinates[0],
                                                                    ('tag_open', 'w', ''))
-                    end_element = self.find_tag_region_end(coordinates, False)
+                    end_element = self.find_region_end(coordinates, False)
                     word_close_index = \
                         self.element_stack.insert_tag_into_content(end_element,
                                                                    coordinates[1],
@@ -170,7 +169,7 @@ class TokenizerHandler(xml.sax.handler.ContentHandler):
         for sentence in self.sentences:
             if self.sentence_is_punct(sentence):
                 continue
-            sentence_begin = self.find_tag_region_begin(sentence[0][2:], True)
+            sentence_begin = self.find_region_begin(sentence[0][2:], True)
             tag_open = ('tag_open', 'se', '')
             heading_spaces = re.search('^\s+', sentence[0][0])
             open_position = sentence[0][2]
@@ -178,7 +177,7 @@ class TokenizerHandler(xml.sax.handler.ContentHandler):
                 open_position += heading_spaces.end()
             open_index = self.element_stack.insert_tag(sentence_begin, open_position, tag_open)
 
-            sentence_end = self.find_tag_region_end(sentence[-1][2:], True)
+            sentence_end = self.find_region_end(sentence[-1][2:], True)
             trailing_spaces = re.search('\s+$', sentence[-1][0])
             close_position = sentence[-1][3]
             if trailing_spaces:
@@ -199,7 +198,7 @@ class TokenizerHandler(xml.sax.handler.ContentHandler):
 
     # greedy enclosing means that we want to enclose
     # all the non-para-breaking tags we encounter
-    def find_tag_region_begin(self, in_first_content_token_position, in_greedy_enclosing):
+    def find_region_begin(self, in_first_content_token_position, in_greedy_enclosing):
         (content_begin, content_end) = in_first_content_token_position
         element_index = self.find_content_tag_by_coordinate(content_begin)
         keep_tracking = in_greedy_enclosing \
@@ -217,9 +216,10 @@ class TokenizerHandler(xml.sax.handler.ContentHandler):
                 keep_tracking = False
         return element_index
 
-    def find_tag_region_end(self, in_last_content_token_position, in_greedy_enclosing):
+    def find_region_end(self, in_last_content_token_position, in_greedy_enclosing):
         (content_begin, content_end) = in_last_content_token_position
-        element_index = self.find_content_tag_by_coordinate(content_begin)
+        # normally we don't have zero-length regions, so -1 is ok
+        element_index = self.find_content_tag_by_coordinate(content_end - 1)
         keep_tracking = in_greedy_enclosing \
                         and not self.position_breaks_content(content_end, element_index)
         while keep_tracking:

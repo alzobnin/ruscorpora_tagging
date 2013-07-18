@@ -28,7 +28,9 @@ class ElementStack(object):
             if last_element[0] == 'content':
                 self.storage.pop()
                 new_content = last_element[1] + content
-                self.storage.append(('content', new_content, last_element[2], content_end))
+                content_begin = last_element[2]
+                content_end = content_begin + len(new_content)
+                self.storage.append(('content', new_content, content_begin, content_end))
                 return
         self.storage.append(('content', content, content_begin, content_end))
 

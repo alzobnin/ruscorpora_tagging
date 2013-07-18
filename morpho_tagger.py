@@ -5,7 +5,6 @@ import codecs
 from optparse import OptionParser
 import os
 import re
-import types
 import xml.sax
 import lemmer
 from modules import common, element_stack, fs_walk
@@ -129,6 +128,10 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
             COMPOUND_WORD_DELIMITER = '\-+|\'|%s' % pretty_apostrophe
             for bracket in common.editor_brackets:
                 word_for_parse = word_for_parse.replace(bracket, '')
+            if not len(word_for_parse):
+                tag = ('tag_open_close', 'ana', 'lex="?" gr="NONLEX"')
+                self.element_stack.insert_tag_into_content(in_tag_indices[0] + 1, in_coordinates[0], tag)
+                return
             (compound, analysis) = self.lemmer.parse(word_for_parse)
             word_parts = re.split(COMPOUND_WORD_DELIMITER, word)
             delimiters = re.findall(COMPOUND_WORD_DELIMITER, word)
@@ -203,7 +206,8 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
 
 def convert(inpath, outpath):
     out = outpath
-
+    if isinstance(outpath, str):
+        out = codecs.getwriter(common.OUTPUT_ENCODING)(file(outpath, 'wb'), 'xmlcharrefreplace')
     for key in LEMMERS.keys():
         if LEMMERS[key] != None:
             LEMMERS[key].Reset()
