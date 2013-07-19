@@ -12,11 +12,19 @@ class ElementStack(object):
 
     def startTag(self, tag, attrs):
         tag_attrs = ['%s="%s"' % (name, common.quoteattr(value)) for (name, value) in attrs.items()]
-        self.storage.append(('tag_open', tag, ' '.join(tag_attrs)))
+        if self.closeOpenTagSequence(tag, tag_attrs):
+            self.storage.pop()
+        else:
+            self.storage.append(('tag_open', tag, ' '.join(tag_attrs)))
 
     def endTag(self, tag):
         self.storage.append(('tag_close', tag))
 
+    # identifying </tag><tag> sequences
+    def closeOpenTagSequence(self, in_tag, in_tag_attrs):
+        if not len(in_tag_attrs) and len(self.storage):
+            last_element = self.storage[-1]
+            return last_element[0] == 'tag_close' and last_element[1] == in_tag
 
     def addChars(self, content):
         content_begin = self.content_caret
