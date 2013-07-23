@@ -35,7 +35,8 @@ ext_word_re = re.compile(word_pattern % \
                           chars, common.editor_brackets))
 dot_in_digits_re = re.compile(u'[0-9]+[.][0-9]+')
 dot_before_lowercase_re = re.compile(u'[.] *[%s]+' % low_chars)
-sentence_end_re = re.compile(ur'\.\.\.|[.?!]')
+# sentence_end_re = re.compile(ur'\.\.\.|[.?!]')
+sentence_end_re = re.compile(ur'[?!\.]{1,}[\xbb|\"]*')
 
 # string -> list of sentences (lists of words)
 def make_sentences(para):

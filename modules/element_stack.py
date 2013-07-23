@@ -22,7 +22,11 @@ class ElementStack(object):
 
     # identifying </tag><tag> sequences
     def closeOpenTagSequence(self, in_tag, in_tag_attrs):
-        if not len(in_tag_attrs) and len(self.storage):
+        DO_NOT_COLLAPSE_TAGS = ['se']
+
+        if not len(in_tag_attrs) \
+           and len(self.storage) \
+           and in_tag not in DO_NOT_COLLAPSE_TAGS:
             last_element = self.storage[-1]
             return last_element[0] == 'tag_close' and last_element[1] == in_tag
 
