@@ -10,7 +10,7 @@ import lemmer
 from modules import common, element_stack, fs_walk
 
 LEMMERS = {}
-default_lang = ''
+default_lang = 'rus'
 
 langs_without_lemmer = frozenset(
     ("hr", "hsb", "la", "lt", "lv", "mk", "nl", "sk", "sl", "sr", "sv")
@@ -44,7 +44,7 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
             self.word_tagged = True
         if tag == 'w':
             self.within_word = True
-        elif tag == 'se':
+        if tag == 'se':
             self.lang = attrs.get('lang', default_lang)
             if len(self.lang) > 2 and self.lang[-2] == "_":
                 self.lang = self.lang[:-2]
