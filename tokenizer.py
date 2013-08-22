@@ -11,7 +11,7 @@ from modules import common
 
 word_break_tags = [u'sub', u'sup']
 
-para_break_tags = [u'p', u'tr', u'td', u'th', u'table', u'body', u'se']
+para_break_tags = [u'p', u'tr', u'td', u'th', u'table', u'body', u'se', 'speach']
 
 chars = u'A-Za-z\u00C0-\u00D7\u00D8-\u00F6\u00F8-\u04FF\u2DE0-\u2DFF\uA640-\uA69F'
 cap_chars = ur'A-Z\u0401\u0410-\u042F'

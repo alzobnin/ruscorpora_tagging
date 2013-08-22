@@ -10,6 +10,9 @@ class ElementStack(object):
         self.storage = []
         self.content_caret = 0
 
+    def __len__(self):
+        return len(self.storage)
+
     def startTag(self, tag, attrs):
         tag_attrs = ['%s="%s"' % (name, common.quoteattr(value)) for (name, value) in attrs.items()]
         if self.closeOpenTagSequence(tag, tag_attrs):
