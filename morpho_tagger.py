@@ -7,7 +7,7 @@ import os
 import re
 import xml.sax
 import lemmer
-from modules import common, element_stack, fs_walk
+from modules import common, element_stack, fs_walk, config
 
 LEMMERS = {}
 default_lang = 'rus'
@@ -31,7 +31,7 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
         self.do_not_parse_sentence = False
 
     def startDocument(self):
-        self.out.write('<?xml version="1.0" encoding="%s"?>\n' % common.OUTPUT_ENCODING)
+        self.out.write('<?xml version="1.0" encoding="%s"?>\n' % config.CONFIG['out_encoding'])
 
     def endDocument(self):
         self.collapse_element_stack()
@@ -223,7 +223,7 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
 def convert(inpath, outpath):
     out = outpath
     if isinstance(outpath, str):
-        out = codecs.getwriter(common.OUTPUT_ENCODING)(file(outpath, 'wb'), 'xmlcharrefreplace')
+        out = codecs.getwriter(config.CONFIG['out_encoding'])(file(outpath, 'wb'), 'xmlcharrefreplace')
     for key in LEMMERS.keys():
         if LEMMERS[key] != None:
             LEMMERS[key].Reset()
@@ -284,6 +284,7 @@ def configure_option_parser(in_usage_string=''):
                       help="use full morphology")
     parser.add_option("--addFixList", action="store_true", dest="addFixList", default=False,
                       help="add fix list analyses instead of replacing analyses from lemmer")
+    parser.add_option('--output_encoding', dest='out_encoding', help='encoding of the output files', default='cp1251')
     return parser
 
 def main():
@@ -291,6 +292,7 @@ def main():
     parser = configure_option_parser(usage_string)
     (options, args) = parser.parse_args()
 
+    config.generate_config(options, args)
     if not options.input or not options.output:
         parser.print_help()
         exit(0)

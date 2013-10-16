@@ -6,7 +6,7 @@ import os
 import xml.sax
 import re
 import optparse
-from modules import fs_walk, element_stack
+from modules import fs_walk, element_stack, config
 from modules import common
 
 word_break_tags = [u'sub', u'sup']
@@ -101,7 +101,7 @@ class TokenizerHandler(xml.sax.handler.ContentHandler):
         self.element_stack.addChars(content)
 
     def startDocument(self):
-        self.out.write('<?xml version="1.0" encoding="%s"?>\n' % common.OUTPUT_ENCODING)
+        self.out.write('<?xml version="1.0" encoding="%s"?>\n' % config.CONFIG['out_encoding'])
 
     def endDocument(self):
         self.collapse_element_stack()
@@ -271,7 +271,7 @@ class TokenizerHandler(xml.sax.handler.ContentHandler):
 def convert(inpath, outpath):
     out = outpath
     if isinstance(outpath, str):
-        out = codecs.getwriter(common.OUTPUT_ENCODING)(file(outpath, 'wb'), 'xmlcharrefreplace')
+        out = codecs.getwriter(config.CONFIG['out_encoding'])(file(outpath, 'wb'), 'xmlcharrefreplace')
     tokenizer_handler = TokenizerHandler(out)
     try:
         parser = xml.sax.make_parser()
@@ -287,8 +287,10 @@ def main():
     parser = optparse.OptionParser(usage=usage_string)
     parser.add_option('--input', dest='input', help='input path - directory or file')
     parser.add_option('--output', dest='output', help='output path - directory or file')
+    parser.add_option('--output_encoding', dest='out_encoding', help='encoding of the output files', default='cp1251')
 
     (options, args) = parser.parse_args()
+    config.generate_config(options, args)
     if not options.input or not options.output:
         parser.print_help()
         exit(0)

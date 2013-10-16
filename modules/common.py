@@ -4,8 +4,6 @@
 # editor marks inside a word
 editor_brackets = ur'\[\]\<\>'
 
-OUTPUT_ENCODING = 'cp1251'
-
 def quotetext(s):
   if not s:
     return u""

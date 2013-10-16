@@ -2,15 +2,15 @@ import StringIO
 import codecs
 import os
 import sys
-from modules import fs_walk, common
+from modules import fs_walk, config
 import morpho_tagger
 import tokenizer
 
 
 def convert(inpath, outpath):
-    intermediate_buffer = codecs.getwriter(common.OUTPUT_ENCODING)(StringIO.StringIO(),
-                                                                   'xmlcharrefreplace')
-    outfile = codecs.getwriter(common.OUTPUT_ENCODING)(file(outpath, 'wb'), 'xmlcharrefreplace')
+    encoding = config.CONFIG['out_encoding']
+    intermediate_buffer = codecs.getwriter(encoding)(StringIO.StringIO(), 'xmlcharrefreplace')
+    outfile = codecs.getwriter(encoding)(file(outpath, 'wb'), 'xmlcharrefreplace')
 
     sys.stdout.write('Tokenizing')
     tokenizer.convert(inpath, intermediate_buffer)
@@ -24,6 +24,7 @@ def main():
     parser = morpho_tagger.configure_option_parser(usage_string)
     (options, args) = parser.parse_args()
 
+    config.generate_config(options, args)
     if not options.input or not options.output:
         parser.print_help()
         exit(0)
