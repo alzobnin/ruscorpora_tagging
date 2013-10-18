@@ -119,13 +119,14 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
         if number_re.match(clearword):
             tag = ('tag_open_close',
                    'ana',
-                   'lex="%s" gr="NUM,ciph"' % common.quoteattr(clearword))
+                   self.process_features({'lex': common.quoteattr(clearword), 'gr': 'NUM,ciph'})
+            )
             self.element_stack.insert_tag_into_content(in_tag_indices[0] + 1,
                                                        in_coordinates[0],
                                                        tag)
             return
         elif not clearword or self.lemmer == None:
-            tag = ('tag_open_close', 'ana', 'lex="?" gr="NONLEX"')
+            tag = ('tag_open_close', 'ana', self.process_features({'lex': '?', 'gr': 'NONLEX'}))
             self.element_stack.insert_tag_into_content(in_tag_indices[0] + 1,
                                                        in_coordinates[0],
                                                        tag)
@@ -135,7 +136,7 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
             for bracket in common.editor_brackets:
                 word_for_parse = word_for_parse.replace(bracket, '')
             if not len(word_for_parse):
-                tag = ('tag_open_close', 'ana', 'lex="?" gr="NONLEX"')
+                tag = ('tag_open_close', 'ana', self.process_features({'lex': '?', 'gr': 'NONLEX'}))
                 self.element_stack.insert_tag_into_content(in_tag_indices[0] + 1,
                                                            in_coordinates[0],
                                                            tag)
@@ -162,6 +163,14 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
                 token_begin += len(atomic_word)
 
             self.markup_word_parses(in_tag_indices, parsed_tokens, analysis)
+
+    def process_features(self, in_features):
+        features_filtered = []
+        for (feature, value) in in_features.iteritems():
+            if feature in config.CONFIG['features']:
+                features_filtered.append('%s="%s"' % (feature, value))
+        return ' '.join(features_filtered)
+
 
     def markup_word_parses(self, in_tag_indices, in_parsed_tokens, in_analysis):
         target_element_index = in_tag_indices[0]
@@ -211,13 +220,13 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
         for parse in in_ambiguous_parse:
             lemma = parse[0]
             for (gramm, sem, semall) in parse[1]:
-                features = 'lex="%s" gr="%s" sem="%s" sem2="%s"' % (
-                    common.quoteattr(lemma),
-                    common.quoteattr(gramm),
-                    common.quoteattr(sem),
-                    common.quoteattr(semall)
-                )
-                tags.append(('tag_open_close', 'ana', features))
+                features = {
+                    'lex': common.quoteattr(lemma),
+                    'gr': common.quoteattr(gramm),
+                    'sem': common.quoteattr(sem),
+                    'sem2': common.quoteattr(semall)
+                }
+                tags.append(('tag_open_close', 'ana', self.process_features(features)))
         return tags
 
 def convert(inpath, outpath):
@@ -285,6 +294,10 @@ def configure_option_parser(in_usage_string=''):
     parser.add_option("--addFixList", action="store_true", dest="addFixList", default=False,
                       help="add fix list analyses instead of replacing analyses from lemmer")
     parser.add_option('--output_encoding', dest='out_encoding', help='encoding of the output files', default='cp1251')
+    parser.add_option('--features',
+                      dest='features',
+                      help='what features to output: any \',\'-separated combination of [gr, lex, sem, sem2]',
+                      default='lex,gr,sem,sem2')
     return parser
 
 def main():
@@ -292,7 +305,7 @@ def main():
     parser = configure_option_parser(usage_string)
     (options, args) = parser.parse_args()
 
-    config.generate_config(options, args)
+    config.generate_config(options)
     if not options.input or not options.output:
         parser.print_help()
         exit(0)

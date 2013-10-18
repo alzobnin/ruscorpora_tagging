@@ -290,7 +290,7 @@ def main():
     parser.add_option('--output_encoding', dest='out_encoding', help='encoding of the output files', default='cp1251')
 
     (options, args) = parser.parse_args()
-    config.generate_config(options, args)
+    config.generate_config(options)
     if not options.input or not options.output:
         parser.print_help()
         exit(0)

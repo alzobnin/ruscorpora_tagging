@@ -24,7 +24,7 @@ def main():
     parser = morpho_tagger.configure_option_parser(usage_string)
     (options, args) = parser.parse_args()
 
-    config.generate_config(options, args)
+    config.generate_config(options)
     if not options.input or not options.output:
         parser.print_help()
         exit(0)
