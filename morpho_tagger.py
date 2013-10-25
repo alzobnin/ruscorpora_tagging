@@ -7,7 +7,7 @@ import os
 import re
 import xml.sax
 import lemmer
-from modules import common, element_stack, fs_walk, config
+from modules import common, element_stack, fs_walk, config, lemmer_cache
 
 LEMMERS = {}
 default_lang = 'rus'
@@ -21,6 +21,7 @@ number_re = re.compile(ur'[0-9,.-]+$')
 
 class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
     def __init__(self, outfile):
+        self.lemmer_cache = lemmer_cache.LemmerCache()
         self.out = outfile
         self.element_stack = element_stack.ElementStack()
         self.within_word = False
@@ -141,7 +142,12 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
                                                            in_coordinates[0],
                                                            tag)
                 return
-            (compound, analysis) = self.lemmer.parse(word_for_parse)
+            if word_for_parse not in self.lemmer_cache:
+                (compound, analysis) = self.lemmer.parse(word_for_parse)
+                self.lemmer_cache[word_for_parse] = (compound, analysis)
+            else:
+                (compound, analysis) = self.lemmer_cache[word_for_parse]
+
             word_parts = re.split(COMPOUND_WORD_DELIMITER, word)
             delimiters = re.findall(COMPOUND_WORD_DELIMITER, word)
 
