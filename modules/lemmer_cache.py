@@ -1,5 +1,5 @@
 class LemmerCache(dict):
-    def __init__(self, in_max_length = 200000):
+    def __init__(self, in_max_length = 500000):
         self.__max_len = in_max_length
 
     def put(self, (key, value)):

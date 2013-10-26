@@ -19,9 +19,10 @@ manual_tagging_langs = frozenset(("pl"))
 
 number_re = re.compile(ur'[0-9,.-]+$')
 
+LEMMER_CACHE = lemmer_cache.LemmerCache()
+
 class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
     def __init__(self, outfile):
-        self.lemmer_cache = lemmer_cache.LemmerCache()
         self.out = outfile
         self.element_stack = element_stack.ElementStack()
         self.within_word = False
@@ -142,11 +143,12 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
                                                            in_coordinates[0],
                                                            tag)
                 return
-            if word_for_parse not in self.lemmer_cache:
+            global LEMMER_CACHE
+            if word_for_parse not in LEMMER_CACHE:
                 (compound, analysis) = self.lemmer.parse(word_for_parse)
-                self.lemmer_cache[word_for_parse] = (compound, analysis)
+                LEMMER_CACHE[word_for_parse] = (compound, analysis)
             else:
-                (compound, analysis) = self.lemmer_cache[word_for_parse]
+                (compound, analysis) = LEMMER_CACHE[word_for_parse]
 
             word_parts = re.split(COMPOUND_WORD_DELIMITER, word)
             delimiters = re.findall(COMPOUND_WORD_DELIMITER, word)
