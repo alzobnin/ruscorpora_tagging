@@ -306,6 +306,7 @@ def configure_option_parser(in_usage_string=''):
                       dest='features',
                       help='what features to output: any \',\'-separated combination of [gr, lex, sem, sem2]',
                       default='lex,gr,sem,sem2')
+    parser.add_option('--jobs', dest='jobs_number', help='parallel jobs number', default='1')
     return parser
 
 def main():
