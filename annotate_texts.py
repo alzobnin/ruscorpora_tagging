@@ -54,7 +54,7 @@ def main():
         result = pool.map_async(convert, TASKS)
         retcode = sum([1 if code is not None else 0 for code in result.get()])
     else:
-        retcode = convert(inpath, outpath) is not None
+        retcode = convert((inpath, outpath)) is not None
     return retcode
 
 

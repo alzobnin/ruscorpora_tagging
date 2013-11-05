@@ -288,6 +288,7 @@ def main():
     parser.add_option('--input', dest='input', help='input path - directory or file')
     parser.add_option('--output', dest='output', help='output path - directory or file')
     parser.add_option('--output_encoding', dest='out_encoding', help='encoding of the output files', default='cp1251')
+    parser.add_option('--jobs', dest='jobs_number', help='concurrent jobs number', default='1')
 
     (options, args) = parser.parse_args()
     config.generate_config(options)
