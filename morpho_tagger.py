@@ -237,11 +237,12 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
                 tags.append(('tag_open_close', 'ana', self.process_features(features)))
         return tags
 
-def convert_and_log(inpath, outpath):
-    retcode = convert(inpath, outpath)
-    print '"%s" morpho tagged - %s' % (inpath, 'OK' if retcode == 0 else 'FAIL')
+def convert_and_log(in_paths):
+    retcode = convert(in_paths)
+    print '"%s" morpho tagged - %s' % (in_paths[0], 'OK' if retcode == 0 else 'FAIL')
 
-def convert(inpath, outpath):
+def convert(in_paths):
+    (inpath, outpath) = in_paths
     out = outpath
     if isinstance(outpath, str):
         out = codecs.getwriter(config.CONFIG['out_encoding'])(file(outpath, 'wb'), 'xmlcharrefreplace')
@@ -334,7 +335,7 @@ def main():
         return_codes = task_list.execute_tasks(convert_and_log)
         retcode = sum([1 if code is not None else 0 for code in return_codes])
     else:
-        retcode = convert_and_log(inpath, outpath)
+        retcode = convert_and_log((inpath, outpath))
     return retcode
 
 

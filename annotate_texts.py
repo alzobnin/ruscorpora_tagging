@@ -13,11 +13,11 @@ def convert(paths):
 
     retcode = None
     try:
-        tokenization_retcode = tokenizer.convert(inpath, intermediate_buffer)
+        tokenization_retcode = tokenizer.convert((inpath, intermediate_buffer))
         print '"%s" tokenized - %s' % (inpath, 'OK' if tokenization_retcode == 0 else 'FAIL')
 
         intermediate_buffer.seek(0)
-        tagging_retcode = morpho_tagger.convert(intermediate_buffer, outfile)
+        tagging_retcode = morpho_tagger.convert((intermediate_buffer, outfile))
         print '"%s" morpho tagged - %s' % (inpath, 'OK' if tagging_retcode == 0 else 'FAIL')
     except Exception as e:
         print e.message
