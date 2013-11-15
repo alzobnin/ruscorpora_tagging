@@ -245,14 +245,15 @@ def convert(inpath, outpath):
         if LEMMERS[key] != None:
             LEMMERS[key].Reset()
 
+    retcode = 0
     try:
         tagger_handler = MorphoTaggerHandler(out)
         parser = xml.sax.make_parser()
         parser.setContentHandler(tagger_handler)
         parser.parse(inpath)
-        print ' - OK'
     except xml.sax.SAXException:
-        print ' - FAILED'
+        retcode = 1
+    return retcode
 
 def initialize_lemmers(in_options):
     print 'Initializing...',

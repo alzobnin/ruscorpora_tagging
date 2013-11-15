@@ -273,13 +273,14 @@ def convert(inpath, outpath):
     if isinstance(outpath, str):
         out = codecs.getwriter(config.CONFIG['out_encoding'])(file(outpath, 'wb'), 'xmlcharrefreplace')
     tokenizer_handler = TokenizerHandler(out)
+    retcode = 0
     try:
         parser = xml.sax.make_parser()
         parser.setContentHandler(tokenizer_handler)
         parser.parse(inpath)
-        print '- OK'
     except xml.sax.SAXException:
-        print ' - FAILED'
+        retcode = 1
+    return retcode
 
 
 def main():
