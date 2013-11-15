@@ -7,7 +7,7 @@ import os
 import re
 import xml.sax
 import lemmer
-from modules import common, element_stack, fs_walk, config, lemmer_cache
+from modules import common, element_stack, fs_walk, config, lemmer_cache, task_list
 
 LEMMERS = {}
 default_lang = 'rus'
@@ -237,6 +237,10 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
                 tags.append(('tag_open_close', 'ana', self.process_features(features)))
         return tags
 
+def convert_and_log(inpath, outpath):
+    retcode = convert(inpath, outpath)
+    print '"%s" morpho tagged - %s' % (inpath, 'OK' if retcode == 0 else 'FAIL')
+
 def convert(inpath, outpath):
     out = outpath
     if isinstance(outpath, str):
@@ -326,10 +330,14 @@ def main():
     outpath = os.path.abspath(options.output)
 
     if os.path.isdir(inpath):
-        fs_walk.process_directory(inpath, outpath, convert)
+        fs_walk.process_directory(inpath, outpath, task_list.add_task)
+        return_codes = task_list.execute_tasks(convert_and_log)
+        retcode = sum([1 if code is not None else 0 for code in return_codes])
     else:
-        convert(inpath, outpath)
+        retcode = convert_and_log(inpath, outpath)
+    return retcode
 
 
 if __name__ == '__main__':
-    main()
+    retcode = main()
+    exit(retcode)

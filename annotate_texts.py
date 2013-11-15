@@ -1,13 +1,9 @@
 import StringIO
 import codecs
-import multiprocessing
 import os
-import sys
-from modules import fs_walk, config
+from modules import fs_walk, config, task_list
 import morpho_tagger
 import tokenizer
-
-TASKS = []
 
 def convert(paths):
     (inpath, outpath) = paths
@@ -28,10 +24,6 @@ def convert(paths):
         retcode = inpath
     return retcode
 
-def add_task(in_path, out_path):
-    global TASKS
-    TASKS.append((in_path, out_path))
-
 def main():
 
     usage_string = 'Usage: annotate_texts.py --input <input path> --output <output path> [options]'
@@ -50,10 +42,9 @@ def main():
 
     retcode = 0
     if os.path.isdir(inpath):
-        fs_walk.process_directory(inpath, outpath, add_task)
-        pool = multiprocessing.Pool(processes=config.CONFIG['jobs_number'])
-        result = pool.map_async(convert, TASKS)
-        retcode = sum([1 if code is not None else 0 for code in result.get()])
+        fs_walk.process_directory(inpath, outpath, task_list.add_task)
+        return_codes = task_list.execute_tasks(convert)
+        retcode = sum([1 if code is not None else 0 for code in return_codes])
     else:
         retcode = convert((inpath, outpath)) is not None
     return retcode

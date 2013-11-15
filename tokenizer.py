@@ -6,7 +6,7 @@ import os
 import xml.sax
 import re
 import optparse
-from modules import fs_walk, element_stack, config
+from modules import fs_walk, element_stack, config, task_list
 from modules import common
 
 word_break_tags = [u'sub', u'sup']
@@ -267,8 +267,13 @@ class TokenizerHandler(xml.sax.handler.ContentHandler):
                     text_to_flush += '</se>'
         return text_to_flush
 
+def convert_and_log(in_paths):
+    retcode = convert(in_paths)
+    print '"%s" tokenized - %s' % (in_paths[0], 'OK' if retcode == 0 else 'FAIL')
+    return retcode
 
-def convert(inpath, outpath):
+def convert(in_paths):
+    (inpath, outpath) = in_paths
     out = outpath
     if isinstance(outpath, str):
         out = codecs.getwriter(config.CONFIG['out_encoding'])(file(outpath, 'wb'), 'xmlcharrefreplace')
@@ -282,6 +287,10 @@ def convert(inpath, outpath):
         retcode = 1
     return retcode
 
+def convert_test(in_paths):
+    (inpath, outpath) = in_paths
+    open(outpath, 'w').writelines(open(inpath).readlines())
+    return 0
 
 def main():
     usage_string = 'Usage: tokenizer.py --input <input path> --output <output path>'
@@ -300,10 +309,16 @@ def main():
     outpath = os.path.abspath(options.output)
 
     if os.path.isdir(inpath):
-        fs_walk.process_directory(inpath, outpath, convert)
+        print 'Collecting tasks...'
+        fs_walk.process_directory(inpath, outpath, task_list.add_task)
+        print 'Starting processing...'
+        child_retcodes = task_list.execute_tasks(convert_and_log)
+        retcode = sum([1 if code != 0 else 0 for code in child_retcodes])
     else:
-        convert(inpath, outpath)
-
+        retcode = convert_and_log((inpath, outpath))
+    return retcode
 
 if __name__ == '__main__':
-    main()
+    retcode = main()
+    print retcode
+    exit(retcode)
