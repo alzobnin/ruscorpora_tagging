@@ -15,7 +15,7 @@ default_lang = 'rus'
 langs_without_lemmer = frozenset(
     ("hr", "hsb", "la", "lt", "lv", "mk", "nl", "sk", "sl", "sr", "sv")
 )
-manual_tagging_langs = frozenset(("pl"))
+manual_tagging_langs = frozenset(["pl"])
 
 number_re = re.compile(ur'[0-9,.-]+$')
 

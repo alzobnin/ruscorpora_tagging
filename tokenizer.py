@@ -96,6 +96,7 @@ class TokenizerHandler(xml.sax.handler.ContentHandler):
         self.element_stack = element_stack.ElementStack()
         self.inbody = False
         self.out = in_destination
+        self.do_not_tokenize_sentence = False
 
     def characters(self, content):
         self.element_stack.addChars(content)
@@ -110,6 +111,8 @@ class TokenizerHandler(xml.sax.handler.ContentHandler):
     def startElement(self, tag, attrs):
         if tag in para_break_tags:
             self.collapse_element_stack()
+        if tag == 'w':
+            self.do_not_tokenize_sentence = True
         if tag == 'body':
             self.inbody = True
         self.element_stack.startTag(tag, attrs)
@@ -118,11 +121,13 @@ class TokenizerHandler(xml.sax.handler.ContentHandler):
         self.element_stack.endTag(tag)
         if tag in para_break_tags: # 'body' is in para_break_tags
             self.collapse_element_stack()
+        if tag == 'se':
+            self.do_not_tokenize_sentence = False
         if tag == 'body':
             self.inbody = False
 
     def collapse_element_stack(self):
-        if self.inbody:
+        if self.inbody and not self.do_not_tokenize_sentence:
             self.tokenize_sentences()
         self.out.write(self.element_stack.collapse())
 
