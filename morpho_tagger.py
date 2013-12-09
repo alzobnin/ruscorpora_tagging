@@ -44,6 +44,7 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
 
         if tag == 'ana':
             self.word_tagged = True
+            self.do_not_parse_sentence = True
         if tag == 'w':
             self.within_word = True
         if tag == 'se':
