@@ -115,6 +115,14 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
     # annotating the content within the tag region with <ana>'s
     # and splitting compounds into multiple <w>'s
     def parse_word(self, word, in_coordinates, in_tag_indices):
+        content_tag_index = in_tag_indices[0] + 1
+        while self.element_stack.storage[content_tag_index][0] != 'content'\
+              and content_tag_index < in_tag_indices[1]:
+            content_tag_index += 1
+        if self.element_stack.storage[content_tag_index][0] != 'content':
+            raise RuntimeError('Could not find content element while parsing "%s" %d' %
+                               (word, str(in_coordinates)))
+
         pretty_apostrophe = u'\u2019'
         apostrophe = '\''.decode('utf-8')
         clearword = word.replace(u'\u0300', '').replace(u'\u0301', '').replace(pretty_apostrophe,
@@ -124,13 +132,13 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
                    'ana',
                    self.process_features({'lex': common.quoteattr(clearword), 'gr': 'NUM,ciph'})
             )
-            self.element_stack.insert_tag_into_content(in_tag_indices[0] + 1,
+            self.element_stack.insert_tag_into_content(content_tag_index,
                                                        in_coordinates[0],
                                                        tag)
             return
         elif not clearword or self.lemmer == None:
             tag = ('tag_open_close', 'ana', self.process_features({'lex': '?', 'gr': 'NONLEX'}))
-            self.element_stack.insert_tag_into_content(in_tag_indices[0] + 1,
+            self.element_stack.insert_tag_into_content(content_tag_index,
                                                        in_coordinates[0],
                                                        tag)
         else:
@@ -140,7 +148,7 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
                 word_for_parse = word_for_parse.replace(bracket, '')
             if not len(word_for_parse):
                 tag = ('tag_open_close', 'ana', self.process_features({'lex': '?', 'gr': 'NONLEX'}))
-                self.element_stack.insert_tag_into_content(in_tag_indices[0] + 1,
+                self.element_stack.insert_tag_into_content(content_tag_index,
                                                            in_coordinates[0],
                                                            tag)
                 return
