@@ -13,6 +13,10 @@ class ElementStack(object):
     def __len__(self):
         return len(self.storage)
 
+    # text enclosed by this tag will not appear as text node in all processing procedures
+    def insertNoindexTag(self, in_tag, in_content):
+        self.storage.append(('tag_open_close', in_tag, in_content))
+
     def startTag(self, tag, attrs):
         tag_attrs = ['%s="%s"' % (name, common.quoteattr(value)) for (name, value) in attrs.items()]
         if self.closeOpenTagSequence(tag, tag_attrs):
@@ -68,7 +72,10 @@ class ElementStack(object):
             if element[0] == 'tag_open':
                 result += '<%s%s%s>' % (element[1], ' ' * int(len(element[2]) != 0), element[2])
             elif element[0] == 'tag_open_close':
-                result += '<%s%s%s/>' % (element[1], ' ' * int(len(element[2]) != 0), element[2])
+                if element[1] == 'noindex':
+                    result += '<%s>%s</%s>' % (element[1], element[2], element[1])
+                else:
+                    result += '<%s%s%s/>' % (element[1], ' ' * int(len(element[2]) != 0), element[2])
             elif element[0] == 'tag_close':
                 result += '</%s>' % element[1]
             elif element[0] == 'content':
