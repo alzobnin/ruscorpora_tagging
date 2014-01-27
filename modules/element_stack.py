@@ -73,9 +73,10 @@ class ElementStack(object):
                 result += '<%s%s%s>' % (element[1], ' ' * int(len(element[2]) != 0), element[2])
             elif element[0] == 'tag_open_close':
                 if element[1] == 'noindex':
-                    result += '<%s>%s</%s>' % (element[1], element[2], element[1])
+                    result += '<%s>%s</%s>' % (element[1], common.quotetext(element[2]), element[1])
                 else:
-                    result += '<%s%s%s/>' % (element[1], ' ' * int(len(element[2]) != 0), element[2])
+                    result += '<%s%s%s/>' %\
+                        (element[1],' ' * int(len(element[2]) != 0), element[2])
             elif element[0] == 'tag_close':
                 result += '</%s>' % element[1]
             elif element[0] == 'content':
