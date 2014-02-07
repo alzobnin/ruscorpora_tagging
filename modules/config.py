@@ -1,4 +1,6 @@
-CONFIG = {}
+CONFIG = {
+    'out_encoding': 'utf-8',
+}
 
 def generate_config(in_options):
     global CONFIG
