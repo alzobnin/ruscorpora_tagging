@@ -73,49 +73,42 @@ class Lemmer:
 
     self.Add = {}
     if addPath:
-      try:
-        f = codecs.getreader("windows-1251")(file(addPath, "rb"))
-        for l in f:
-          x = l.replace(u"<ana", "@").replace("lex=", "").replace("gr=", "").replace("/>", "").replace(">", "") \
-            .replace("\"", " ").replace("=", ",").rstrip().split("@")
-          form = x[0].lstrip().rstrip()
-          if form not in self.Add:
-            self.Add[form] = []
-          for el in x[1:]:
-            s = el.lstrip().rstrip().split()
-            lemma = s[0]
-            gramm = s[1]
-            (head, _, tail) = gramm.partition("(")
-            head = head.split(",")
-            category = head[0]
-            head = set(head)
-            head.discard("")
-            tail = (tail.partition(")")[0]).split("|")
-            res = []
-            for tl in tail:
-              s = set(tl.split(","))
-              s.discard("")
-              res.append(self.createAttrs("", lemma, category, head, s))
-            self.Add[form].append((lemma, res, "ru"))
-        f.close()
-      except IOError:
-        pass
+      f = codecs.getreader("windows-1251")(file(addPath, "rb"))
+      for l in f:
+        x = l.replace(u"<ana", "@").replace("lex=", "").replace("gr=", "").replace("/>", "").replace(">", "") \
+          .replace("\"", " ").replace("=", ",").rstrip().split("@")
+        form = x[0].lstrip().rstrip()
+        if form not in self.Add:
+          self.Add[form] = []
+        for el in x[1:]:
+          s = el.lstrip().rstrip().split()
+          lemma = s[0]
+          gramm = s[1]
+          (head, _, tail) = gramm.partition("(")
+          head = head.split(",")
+          category = head[0]
+          head = set(head)
+          head.discard("")
+          tail = (tail.partition(")")[0]).split("|")
+          res = []
+          for tl in tail:
+            s = set(tl.split(","))
+            s.discard("")
+            res.append(self.createAttrs("", lemma, category, head, s))
+          self.Add[form].append((lemma, res, "ru"))
+      f.close()
 
     self.Del = set()
     self.DelPatterns = []
     if delPath:
-      try:
-        f = codecs.getreader("windows-1251")(file(delPath, "rb"))
-        for l in f:
-          x = l.rstrip().split()
-          if x[0].endswith("*"):
-            self.DelPatterns.append((x[0][:-1], x[1], set(x[2].split(','))))
-          else:
-            self.Del.add(tuple(x[0:3]))
-        f.close()
-      except IOError:
-        pass
-
+      f = codecs.getreader("windows-1251")(file(delPath, "rb"))
+      for l in f:
+        x = l.rstrip().split()
+        if x[0].endswith("*"):
+          self.DelPatterns.append((x[0][:-1], x[1], set(x[2].split(','))))
+        else:
+          self.Del.add(tuple(x[0:3]))
+      f.close()
 
   def Reset(self):
     pass

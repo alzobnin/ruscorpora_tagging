@@ -95,11 +95,23 @@ class TokenizerHandler(xml.sax.handler.ContentHandler):
         self.sentences = []
         self.element_stack = element_stack.ElementStack()
         self.inbody = False
+        self.inside_noindex = False
+        self.noindex_characters = ''
         self.out = in_destination
         self.do_not_tokenize_sentence = False
 
     def characters(self, content):
+        if self.inside_noindex:
+            self.noindex_characters += content
+            return
         self.element_stack.addChars(content)
+
+    def flush_tag(self, in_tag_name, in_tag_attrs={}):
+        characters = '<%s' % in_tag_name
+        for (name, value) in in_tag_attrs.items():
+            characters += ' %s="%s"' % (name, value)
+        characters += '>'
+        return characters
 
     def startDocument(self):
         self.out.write('<?xml version="1.0" encoding="%s"?>\n' % config.CONFIG['out_encoding'])
@@ -109,8 +121,13 @@ class TokenizerHandler(xml.sax.handler.ContentHandler):
         self.out.write('\n')
 
     def startElement(self, tag, attrs):
+        if self.inside_noindex:
+            self.noindex_characters += self.flush_tag(tag, attrs)
         if tag in para_break_tags:
             self.collapse_element_stack()
+        if tag == 'noindex':
+            self.inside_noindex = True
+            return
         if tag == 'w':
             self.do_not_tokenize_sentence = True
         if tag == 'body':
@@ -118,6 +135,13 @@ class TokenizerHandler(xml.sax.handler.ContentHandler):
         self.element_stack.startTag(tag, attrs)
 
     def endElement(self, tag):
+        if tag == 'noindex':
+            self.element_stack.insertNoindexTag('noindex', self.noindex_characters)
+            self.inside_noindex = False
+            self.noindex_characters = ''
+            return
+        if self.inside_noindex:
+            self.noindex_characters += self.flush_tag('/' + tag)
         self.element_stack.endTag(tag)
         if tag in para_break_tags: # 'body' is in para_break_tags
             self.collapse_element_stack()
