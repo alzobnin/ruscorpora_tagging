@@ -2,7 +2,7 @@ import multiprocessing
 
 TASKS = []
 
-from modules import config
+import config
 
 def add_task(in_path, out_path):
     global TASKS
