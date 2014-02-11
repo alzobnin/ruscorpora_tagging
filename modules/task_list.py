@@ -35,3 +35,7 @@ def execute_tasks(in_callback):
 def execute_tasks_single_thread(in_callback):
     result = [in_callback(task) for task in TASKS]
     return result
+
+def clear_task_list():
+    global TASKS
+    TASKS = []
