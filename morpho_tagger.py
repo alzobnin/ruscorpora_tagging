@@ -19,6 +19,7 @@ manual_tagging_langs = frozenset(["pl"])
 
 number_re = re.compile(ur'[0-9,.-]+$')
 
+USE_LEMMER_CACHE = False
 LEMMER_CACHE = lemmer_cache.LemmerCache()
 
 class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
@@ -152,12 +153,7 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
                                                            in_coordinates[0],
                                                            tag)
                 return
-            global LEMMER_CACHE
-            if word_for_parse not in LEMMER_CACHE:
-                (compound, analysis) = self.lemmer.parse(word_for_parse)
-                LEMMER_CACHE[word_for_parse] = (compound, analysis)
-            else:
-                (compound, analysis) = LEMMER_CACHE[word_for_parse]
+            (compound, analysis) = self.__get_analysis(word_for_parse)
 
             word_parts = re.split(COMPOUND_WORD_DELIMITER, word)
             delimiters = re.findall(COMPOUND_WORD_DELIMITER, word)
@@ -180,6 +176,16 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
                 token_begin += len(atomic_word)
 
             self.markup_word_parses(in_tag_indices, parsed_tokens, analysis)
+
+    def __get_analysis(self, in_word):
+        if USE_LEMMER_CACHE:
+            global LEMMER_CACHE
+            if in_word not in LEMMER_CACHE:
+                (compound, analysis) = self.lemmer.parse(in_word)
+                LEMMER_CACHE[in_word] = (compound, analysis)
+            return LEMMER_CACHE[in_word]
+        else:
+            return self.lemmer.parse(in_word)
 
     def process_features(self, in_features):
         features_filtered = []
