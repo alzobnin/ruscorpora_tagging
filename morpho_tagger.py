@@ -135,7 +135,7 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
                    'ana',
                    self.process_features({'lex': common.quoteattr(clearword),
                                           'gr': 'NUM,ciph',
-                                          'weight': '1.0'})
+                                          'disamb': 'yes'})
             )
             self.element_stack.insert_tag_into_content(content_tag_index,
                                                        in_coordinates[0],
@@ -143,8 +143,7 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
             return
         elif not clearword or self.lemmer == None:
             tag = ('tag_open_close', 'ana', self.process_features({'lex': '?',
-                                                                   'gr': 'NONLEX',
-                                                                   'weight': '0.0'}))
+                                                                   'gr': 'NONLEX'}))
             self.element_stack.insert_tag_into_content(content_tag_index,
                                                        in_coordinates[0],
                                                        tag)
@@ -155,8 +154,7 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
                 word_for_parse = word_for_parse.replace(bracket, '')
             if not len(word_for_parse):
                 tag = ('tag_open_close', 'ana', self.process_features({'lex': '?',
-                                                                       'gr': 'NONLEX',
-                                                                       'weight': '0.0'}))
+                                                                       'gr': 'NONLEX'}))
                 self.element_stack.insert_tag_into_content(content_tag_index,
                                                            in_coordinates[0],
                                                            tag)
@@ -249,15 +247,16 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
     def build_tags_for_parse(self, in_ambiguous_parse):
         tags = []
         for parse in in_ambiguous_parse:
-            lemma, parse_variants, language, weight = parse
+            lemma, parse_variants, language, disamb = parse
             for gramm, sem, semall in parse_variants:
                 features = {
                     'lex': common.quoteattr(lemma),
                     'gr': common.quoteattr(gramm),
                     'sem': common.quoteattr(sem),
                     'sem2': common.quoteattr(semall),
-                    'weight': common.quoteattr(str(weight))
                 }
+                if disamb == 'disamb':
+                    features['disamb'] = 'yes'
                 tags.append(('tag_open_close', 'ana', self.process_features(features)))
         return tags
 
@@ -337,8 +336,8 @@ def configure_option_parser(in_usage_string=''):
     parser.add_option('--output_encoding', dest='out_encoding', help='encoding of the output files', default='cp1251')
     parser.add_option('--features',
                       dest='features',
-                      help='what features to output: any \',\'-separated combination of [gr, lex, sem, sem2, weight]',
-                      default='lex,gr,sem,sem2,weight')
+                      help='what features to output: any \',\'-separated combination of [gr, lex, sem, sem2, disamb]',
+                      default='lex,gr,sem,sem2,disamb')
     parser.add_option('--jobs', dest='jobs_number', help='parallel jobs number', default='1')
     return parser
 

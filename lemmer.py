@@ -8,6 +8,8 @@ import re
 import codecs
 from collections import deque
 import os
+import itertools
+import operator
 
 import semantics
 
@@ -110,7 +112,7 @@ class Lemmer:
                         s = set(tl.split(","))
                         s.discard("")
                         res.append(self.createAttrs("", lemma, category, head, s))
-                    self.Add[form].append((lemma, res, 'ru', 1.0))
+                    self.Add[form].append((lemma, res, 'ru', 'disamb'))
             f.close()
 
         self.Del = set()
@@ -141,18 +143,23 @@ class Lemmer:
             if temp != None:
                 if self.reallyAdd:
                     for el in temp:
-                        table[(0, 1)] = table.get((0, 1), []) + [(el[0], el[1], 'ru', 1.0)]
+                        table[(0, 1)] = table.get((0, 1), []) + [(el[0], el[1], 'ru', 'disamb')]
                 else:
                     return (False, {(0, 1): temp})
             else:
                 temp = self.Add.get("+" + lword, None)
                 if temp != None:
                     for el in temp:
-                        table[(0, 1)] = table.get((0, 1), []) + [(el[0], el[1], 'ru', 1.0)]
+                        table[(0, 1)] = table.get((0, 1), []) + [(el[0], el[1], 'ru', 'disamb')]
 
             analyses = liblemmer_python_binding.AnalyzeWord(word, langs=self.langs)
             minNormFirst = maxNormLast = None
-            for ana in analyses:
+            ana_weights = [(ana_id, ana.Weight if hasattr(ana, 'Weight') else 0.0)
+                           for ana_id, ana in zip(itertools.count(), analyses)]
+            ana_weights = sorted(ana_weights, key=operator.itemgetter(1), reverse=True)
+            disamb_ana_id = ana_weights[0][0]
+
+            for ana_id, ana in zip(itertools.count(), analyses):
                 language = ana.Language
                 if len(languageFilter) > 0:
                     if language not in languageFilter:
@@ -161,7 +168,7 @@ class Lemmer:
                 first = ana.First
                 last = ana.Last # + first
                 lemma = ana.Lemma
-                weight = ana.Weight if hasattr(ana, 'Weight') else 0.0
+                disamb = 'disamb' if ana_id == disamb_ana_id else 'nodisamb'
                 head = ana.LexicalFeature
                 if head == []: head = [u'']
                 head = _toLatin(head)
@@ -258,9 +265,9 @@ class Lemmer:
                         if rng[1] < last:
                             del table[rng]
                 if (first, last) in table:
-                    table[(first, last)].append((lemma, gramm, language, weight))
+                    table[(first, last)].append((lemma, gramm, language, disamb))
                 else:
-                    table[(first, last)] = [(lemma, gramm, language, weight)]
+                    table[(first, last)] = [(lemma, gramm, language, disamb)]
                 if ana.Bastardness == 0 and language == "ru":
                     if minNormFirst == None:
                         minNormFirst, maxNormLast = first, last
@@ -269,14 +276,14 @@ class Lemmer:
                         maxNormLast = last
 
             if len(table) == 0:
-                result = (False, {(0,1): [(word, [("NONLEX", "", "")], "ru", '0.0')]})
+                result = (False, {(0,1): [(word, [("NONLEX", "", "")], "ru", 'nodisamb')]})
             else:
                 complete_parse_builder = SegmentCoveringParseBuilder()
                 complete_parse = complete_parse_builder.buildCompleteParse(word, table)
                 # some parts of a compound word are not parsed (rejected or something),
                 # falling back to a single 'NONLEX' part
                 if not complete_parse:
-                    result = (False, {(0, 1): [(word, [("NONLEX", "", "")], "ru", '0.0')]})
+                    result = (False, {(0, 1): [(word, [("NONLEX", "", "")], "ru", 'nodisamb')]})
                 else:
                     complete_parse = self._removeDuplicates(complete_parse)
                     compound = len(complete_parse) > 1
@@ -308,17 +315,17 @@ class Lemmer:
             newAnas = []
             discardIndices = set()
             for i in xrange(len(table[rng])):
-                lemma_i, gramms_i, language_i, weight_i = table[rng][i]
+                lemma_i, gramms_i, language_i, disamb_i = table[rng][i]
                 toRemove = False
                 for j in xrange(len(table[rng])):
                     if i == j or j in discardIndices: continue
-                    lemma_j, gramms_j, language_j, weight_j = table[rng][j]
+                    lemma_j, gramms_j, language_j, disamb_j = table[rng][j]
                     if lemma_i == lemma_j and language_i == language_j:
                         if _DoNotRemoveDuplicates.isdisjoint(gramms_j[0]) and self._isSubset(gramms_i, gramms_j):
                             toRemove = True
                             break
                 if not toRemove:
-                    newAnas.append((lemma_i, gramms_i, language_i, weight_i))
+                    newAnas.append((lemma_i, gramms_i, language_i, disamb_i))
                 else:
                     discardIndices.add(i)
             if len(newAnas) > 0:
