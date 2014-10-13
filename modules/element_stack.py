@@ -132,13 +132,15 @@ class ElementStack(object):
                 else:
                     local_tagstack.append(element)
         if not len(local_tagstack):
-            return result_begin_index, result_end_index
+            return (result_begin_index, result_end_index)
         unclosed_open_tags = [tag for tag in local_tagstack if tag[0] == 'tag_open']
         unopened_close_tags = [tag for tag in local_tagstack if tag[0] == 'tag_close']
-        closed_tags_fix = self.__find_pair_tags_for_unopened(0, result_begin_index, unopened_close_tags)
         open_tags_fix = []
         for tag in reversed(unclosed_open_tags):
             open_tags_fix.append(('tag_close', tag[1]))
+        closed_tags_fix = []
+        for tag in reversed(unopened_close_tags):
+            closed_tags_fix.append(('tag_open', tag[1], ''))
         if len(unclosed_open_tags):
             self.storage[in_end:in_end + 1] += unclosed_open_tags
             self.storage[in_end - 1:in_end] += open_tags_fix
@@ -148,17 +150,4 @@ class ElementStack(object):
             result_end_index += len(closed_tags_fix)
             self.storage[in_begin - 1:in_begin] += unopened_close_tags
             result_begin_index += len(unopened_close_tags)
-        return result_begin_index, result_end_index
-
-    def __find_pair_tags_for_unopened(self, in_begin, in_end, in_tag_list):
-        open_tags = []
-        tag_list = in_tag_list[:]
-        for index in xrange(in_end, in_begin, -1):
-            if not len(tag_list):
-                break
-            tag = self.storage[index]
-            if tag[0] == 'tag_open' and tag[1] == tag_list[0][1]:
-                open_tags.append(tag)
-                tag_list = tag_list[1:]
-        open_tags.reverse()
-        return open_tags
+        return (result_begin_index, result_end_index)
