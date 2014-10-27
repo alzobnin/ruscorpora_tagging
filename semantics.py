@@ -58,7 +58,7 @@ class SemanticDictionary:
 
         headers = []
         if filename != None and len(filename) > 0:
-            src = codecs.getreader("windows-1251")(file(filename, "rb"))
+            src = codecs.getreader("utf-8")(file(filename, "rb"))
             for line in src:
                 tokens = line.strip().split(";")
                 if not tokens: continue
