@@ -1,4 +1,4 @@
-# coding: utf-8
+# -*- Encoding: utf-8 -*-
 
 # All rights belong to Non-commercial Partnership "Russian National Corpus"
 # http://ruscorpora.ru
@@ -7,13 +7,11 @@ import sys
 import re
 import codecs
 from collections import deque
-import os
+import json
 import itertools
-import operator
 
 import semantics
-
-import liblemmer_python_binding
+import mystem_wrapper
 
 to_encoding = codecs.getencoder("utf-8")
 from_encoding = codecs.getdecoder("utf-8")
@@ -38,7 +36,7 @@ _Translate = {
     u'parenth': u'PARENTH',
 }
 
-_good_grams = set([
+_good_grams = {
     u"S", u"A", u"NUM", u"ANUM", u"V", u"ADV", u"PRAEDIC", u"PARENTH",
     u"SPRO", u"APRO", u"PRAEDICPRO", u"ADVPRO", u"PR", u"CONJ", u"PART", u"INTJ",u"COM",
     u"nom", u"voc", u"gen", u"gen2", u"dat", u"acc", u"acc2", u"ins", u"loc", u"loc2", u"adnum",
@@ -60,10 +58,10 @@ _good_grams = set([
     u"diallex",
     u"topon",
     u"NONLEX", u"obsc"
-])
+}
 
-_CapitalFeatures = set(["famn", "persn", "patrn", "topon"])
-_DoNotRemoveDuplicates = set(["famn", "persn", "patrn", "topon"])
+_CapitalFeatures = {"famn", "persn", "patrn", "topon"}
+_DoNotRemoveDuplicates = {"famn", "persn", "patrn", "topon"}
 
 class Lemmer:
     def __init__ (self,
@@ -74,8 +72,8 @@ class Lemmer:
                   full=False,
                   addLang=False,
                   reallyAdd = False):
+        self.mystem_wrapper = mystem_wrapper.MystemWrapper()
         self.langs = langs
-
         self.dictionary = semantics.SemanticDictionary(dictionaryPath)
         self.full = full
         self.addLang = addLang
@@ -83,17 +81,10 @@ class Lemmer:
 
         self.Add = {}
         if addPath:
-            f = codecs.getreader("windows-1251")(file(addPath, "rb"))
+            f = codecs.getreader("utf-8")(file(addPath, "rb"))
             for l in f:
-                x = l.replace(u"<ana", "@") \
-                    .replace("lex=", "") \
-                    .replace("gr=", "") \
-                    .replace("/>", "") \
-                    .replace(">", "") \
-                    .replace("\"", " ") \
-                    .replace("=", ",") \
-                    .rstrip() \
-                    .split("@")
+                x = l.replace(u"<ana", "@").replace("lex=", "").replace("gr=", "").replace("/>", "").replace(">", "") \
+                    .replace("\"", " ").replace("=", ",").rstrip().split("@")
                 form = x[0].lstrip().rstrip()
                 if form not in self.Add:
                     self.Add[form] = []
@@ -118,7 +109,7 @@ class Lemmer:
         self.Del = set()
         self.DelPatterns = []
         if delPath:
-            f = codecs.getreader("windows-1251")(file(delPath, "rb"))
+            f = codecs.getreader("utf-8")(file(delPath, "rb"))
             for l in f:
                 x = l.rstrip().split()
                 if x[0].endswith("*"):
@@ -130,60 +121,92 @@ class Lemmer:
     def Reset(self):
         pass
 
+    def parse_tokens_context_aware(self, in_tokens, languageFilter=[]):
+        tokens = [token.lower() for token in in_tokens]
+        token_regions = []
+        last_position = 0
+        for token in in_tokens:
+            token_regions.append((last_position, last_position + len(token)))
+            last_position += len(token) + 1 # 1 for a whitespace
+        parsed_tokens = self.mystem_wrapper.analyze_tokens(in_tokens)
+        is_enclosed = lambda lhs, rhs: rhs[0] <= lhs[0] and lhs[1] <= rhs[1]
+        result = []
+        for result_slot in in_tokens:
+            result.append([])
 
-    def parse(self, word, languageFilter=[]):
-        result = (False, {})
+        last_position = 0
+        for parsed_token in parsed_tokens:
+            assert 'text' in parsed_token
+            token_text = parsed_token['text']
+            range_begin, range_end = last_position, last_position + len(token_text)
+            token_indices = [index for index in xrange(len(token_regions))
+                             if is_enclosed((range_begin, range_end), token_regions[index])]
+            if token_indices:
+                token_index = token_indices[0]
+                token_region_begin, token_region_end = token_regions[token_index]
+                relative_region = (range_begin - token_region_begin, range_end - token_region_begin)
+                processed_parse = self.__process_parse(parsed_token).values()
+                assert len(processed_parse) < 2
+                # if it's not explicitly present in the input as well as doesn't have a parse,
+                # it's treated as garbage
+                if token_text in tokens or processed_parse:
+                    result[token_index].append((relative_region, processed_parse[0]))
+            last_position += len(token_text)
+        return result
 
-        word = word.strip()
-        if len(word) > 0:
+    def __process_parse(self, in_parsed_token, languageFilter=[]):
+        result = {}
+
+        word = in_parsed_token['text'].strip()
+        if len(word):
             lword = word.lower()
             table = {} # (start, end) -> [(lemma, [(gramm, sem, semall)], language)]
-            temp = self.Add.get(lword, None) # check if this word has it's own special morphological analysis
+            temp = self.Add.get(lword, None) # check if this word has its own special morphological analysis
 
             if temp != None:
                 if self.reallyAdd:
                     for el in temp:
                         table[(0, 1)] = table.get((0, 1), []) + [(el[0], el[1], 'ru', 'disamb')]
                 else:
-                    return (False, {(0, 1): temp})
+                    return {(0, 1): temp}
             else:
                 temp = self.Add.get("+" + lword, None)
                 if temp != None:
                     for el in temp:
                         table[(0, 1)] = table.get((0, 1), []) + [(el[0], el[1], 'ru', 'disamb')]
-
-            analyses = liblemmer_python_binding.AnalyzeWord(word, langs=self.langs)
+            analyses = in_parsed_token.get('analysis', None)
+            if not analyses:
+                return result
             minNormFirst = maxNormLast = None
-            ana_weights = [(ana_id, ana.Weight if hasattr(ana, 'Weight') else 0.0)
-                           for ana_id, ana in zip(itertools.count(), analyses)]
-            ana_weights = sorted(ana_weights, key=operator.itemgetter(1), reverse=True)
-            disamb_ana_id = ana_weights[0][0]
-
             for ana_id, ana in zip(itertools.count(), analyses):
-                language = ana.Language
+                disamb = 'disamb' if not ana_id else 'nodisamb'
+                language = 'ru'
                 if len(languageFilter) and language not in languageFilter:
                     continue
 
-                first = ana.First
-                last = ana.Last # + first
-                lemma = ana.Lemma
-                disamb = 'disamb' if ana_id == disamb_ana_id else 'nodisamb'
-                head = ana.LexicalFeature
-                if head == []: head = [u'']
+                # we force mystem to never do tokenization by itself
+                first = 0
+                last = 1
+                lemma = ana['lex']
+                unglued_grammars = self.__parse_glued_grammar(ana['gr'])
+                lexical_feature = unglued_grammars[0].split('=')[0].split(',')
+                form_feature =[grammar.split('=')[1].split(',') for grammar in unglued_grammars]
+                head, tail = lexical_feature[:], form_feature[:]
+
+                if not head:
+                    head = ['']
+                if not tail:
+                    tail = ['']
+
                 head = _toLatin(head)
                 if word[0].isupper() and not set(head).isdisjoint(_CapitalFeatures):
                     lemma = lemma[0].upper() + lemma[1:]
 
-                if ana.Bastardness in (0, 16):     # QDictionary, QBadRequest
-                    head.append("norm")
-                elif (ana.Bastardness % 4) in (1,2): # QBastard, QSob
+                ana_bastardness = ana.get('qual', '') == 'bastard'
+                if ana_bastardness:
                     head.append("bastard")
                 else:
-                    continue
-
-                tail = list(ana.FormFeature)
-                if not tail:
-                    tail = ['']
+                    head.append("norm")
 
                 category = head[0]
                 llemma = lemma.lower()
@@ -191,11 +214,11 @@ class Lemmer:
                     continue
                 to_delete = False
                 lexical_feature_set = set([_Translate[feature] if feature in _Translate else feature \
-                                           for feature in ana.LexicalFeature])
+                                           for feature in lexical_feature])
                 for (del_pattern, del_lemma, del_category) in self.DelPatterns:
                     if del_lemma in (lemma, llemma) and \
-                       del_category.issubset(set(lexical_feature_set)) and \
-                       (word.startswith(del_pattern) or lword.startswith(del_pattern)):
+                         del_category.issubset(set(lexical_feature_set)) and \
+                         (word.startswith(del_pattern) or lword.startswith(del_pattern)):
                         to_delete = True
                         break
                 if to_delete:
@@ -226,13 +249,13 @@ class Lemmer:
 
                     add = []
                     gramms = frozenset(gramm)
-                    if gramms.issuperset(("nom", "gen", "dat", "acc", "ins", "loc")) and not gramms.issuperset(("m", "f")):
+                    if gramms.issuperset({"nom", "gen", "dat", "acc", "ins", "loc"}) \
+                       and not gramms.issuperset({"m", "f"}):
                         if self.full:
                             add.append("0")
                         else:
                             add = None
                             gramm = [self.createAttrs(word, lemma, category, head, ["0"], language)]
-
                     if add != None:
                         gramm = []
                         for el in tail:
@@ -260,7 +283,7 @@ class Lemmer:
                         gr = [category] + gr
                         gramm.append((",".join(gr), "", ""))
 
-                if first == 0 and last > 1 and ana.Bastardness == 0 and language == "ru":
+                if first == 0 and 1 < last and not ana_bastardness and language == "ru":
                     for rng in table.keys():
                         if rng[1] < last:
                             del table[rng]
@@ -268,33 +291,53 @@ class Lemmer:
                     table[(first, last)].append((lemma, gramm, language, disamb))
                 else:
                     table[(first, last)] = [(lemma, gramm, language, disamb)]
-                if ana.Bastardness == 0 and language == "ru":
+                if not ana_bastardness and language == "ru":
                     if minNormFirst == None:
                         minNormFirst, maxNormLast = first, last
                     elif first <= minNormFirst and last >= maxNormLast:
                         minNormFirst = first
                         maxNormLast = last
 
-            print table
             if len(table) == 0:
-                result = (False, {(0,1): [(word, [("NONLEX", "", "")], "ru", 'nodisamb')]})
+                result = {(0,1): [(word, [('NONLEX', '', '')], 'ru', 'nodisamb')]}
             else:
                 complete_parse_builder = SegmentCoveringParseBuilder()
-                complete_parse = complete_parse_builder.buildCompleteParse(word, table)
+                # parse segment covering is now made by mystem
+                complete_parse = table # complete_parse_builder.buildCompleteParse(word, table)
                 # some parts of a compound word are not parsed (rejected or something),
                 # falling back to a single 'NONLEX' part
                 if not complete_parse:
-                    result = (False, {(0, 1): [(word, [("NONLEX", "", "")], "ru", 'nodisamb')]})
+                    result = {(0,1): [(word, [('NONLEX', '', '')], 'ru', 'nodisamb')]}
                 else:
                     complete_parse = self._removeDuplicates(complete_parse)
-                    compound = len(complete_parse) > 1
-                    result = (compound, complete_parse)
+                    result = complete_parse
         return result
 
+    def __parse_glued_grammar(self, in_grammar):
+        feature_parts = in_grammar.split('=')
+        lex_feature = feature_parts[0]
+        form_feature = feature_parts[1] if 1 < len(feature_parts) else ''
+        form_feature_groups = []
+
+        while form_feature:
+            form_head, _, form_tail = form_feature.partition('(')
+            if form_head:
+                form_feature_groups.append([form_head.strip(',')])
+            or_group, _, new_form_tail = form_tail.partition(')')
+            or_group = filter(lambda token: len(token), or_group.split('|'))
+            if or_group:
+                form_feature_groups.append(or_group)
+            form_feature = new_form_tail.strip(',')
+
+        result = ['%s=%s' % (lex_feature, ','.join(distinct_form_feature))
+                  for distinct_form_feature in itertools.product(*form_feature_groups)]
+        if not result:
+            result = [lex_feature]
+        return result
 
     def _grammsSets(self, gramms):
-        return [(set(gramm.split(",")), set(sem.split(",")), set(sem2.split(","))) for (gramm, sem, sem2) in gramms]
-
+        return [(set(gramm.split(",")), set(sem.split(",")), set(sem2.split(",")))
+                for (gramm, sem, sem2) in gramms]
 
     def _isSubset(self, gramms1, gramms2):
         gramms1 = self._grammsSets(gramms1)
@@ -309,7 +352,6 @@ class Lemmer:
                 return False
         return True
 
-
     def _removeDuplicates(self, table):
         newTable = {}
         for rng in table:
@@ -319,7 +361,8 @@ class Lemmer:
                 lemma_i, gramms_i, language_i, disamb_i = table[rng][i]
                 toRemove = False
                 for j in xrange(len(table[rng])):
-                    if i == j or j in discardIndices: continue
+                    if i == j or j in discardIndices:
+                        continue
                     lemma_j, gramms_j, language_j, disamb_j = table[rng][j]
                     if lemma_i == lemma_j and language_i == language_j:
                         if _DoNotRemoveDuplicates.isdisjoint(gramms_j[0]) and self._isSubset(gramms_i, gramms_j):
@@ -333,12 +376,10 @@ class Lemmer:
                 newTable[rng] = newAnas
         return newTable
 
-
     def prefixCount(word, prefix):
         if words.startswith(prefix):
             return 1 + prefixCount(word[len(prefix):], prefix)
         return 0
-
 
     def createAttrs(self, word, lemma, category, head, tail, language=None):
         def prefixCount(word, prefix):
@@ -352,12 +393,15 @@ class Lemmer:
         # comp -> comp2 for words with true prefix "по"
         if language=="ru" and "comp" in gramm and prefixCount(word, u"по") > prefixCount(lemma, u"по"):
             subword = word[2:]
-            subanalyses = liblemmer_python_binding.AnalyzeWord(subword, langs=["ru"])
+            subanalyses = self.mystem_wrapper.analyze_token(subword)['analysis']
             for ana in subanalyses:
-                if ana.First == 0 and ana.Last == 1 and ana.Bastardness == 0:
-                    subhead = _toLatin(ana.LexicalFeature)
+                ana_first, ana_last = 0, 1
+                if ana_first == 0 and ana_last == 1 and not ana_bastardness:
+                    form_feature, lexical_feature = [features.split(',')
+                                                     for features in ana['gr'].split('=')]
+                    subhead = _toLatin(lexical_feature)
                     subtail = set()
-                    for ff in ana.FormFeature:
+                    for ff in form_feature:
                         subtail |= set(_toLatin(ff))
                     if "comp" in subhead or "comp" in subtail:
                         gramm[gramm.index("comp")] = "comp2"
@@ -384,8 +428,7 @@ class Lemmer:
 # given a set of parsed word segments, finds a connected sequence
 # of segments with maximal individual length
 class SegmentCoveringParseBuilder(object):
-
-    def __getSegmentsRelativePosition(self, in_first, in_second):
+    def relative_position(self, in_first, in_second):
         # segments are supposed to be sorted at the input
         if in_second[0] > in_first[1]:
             return 'NOT_ADJACENT'
@@ -398,8 +441,7 @@ class SegmentCoveringParseBuilder(object):
         if in_first[0] < in_second[0] and in_second[0] < in_first[1] and in_first[1] < in_second[1]:
             return 'INTERSECTED'
 
-    # building a parse for the entire input phrase
-    # by combining partial parses
+    # building a parse for the entire input phrase by combining partial parses
     def buildCompleteParse(self, in_word, in_parse_table):
         atomic_parts_number = len(re.split('\-+|\'', in_word))
 
@@ -418,13 +460,13 @@ class SegmentCoveringParseBuilder(object):
                 segment_index += 1
                 continue
             last_interval = result_segments[-1]
-            relative_position = self.__getSegmentsRelativePosition(last_interval, interval)
-            if relative_position == 'FIRST_ENCLOSED_BY_SECOND':
+            rel_pos = self.relative_position(last_interval, interval)
+            if rel_pos == 'FIRST_ENCLOSED_BY_SECOND':
                 result_segments.pop()
                 result_segments.append(interval)
-            elif relative_position == 'ADJACENT' and interval[0] != interval[1]:
+            elif rel_pos == 'ADJACENT' and interval[0] != interval[1]:
                 result_segments.append(interval)
-            elif relative_position == 'NOT_ADJACENT':
+            elif rel_pos == 'NOT_ADJACENT':
                 return None
             segment_index += 1
 
@@ -432,11 +474,13 @@ class SegmentCoveringParseBuilder(object):
             result_parse[result_segment] = in_parse_table[result_segment]
         return result_parse
 
+
 def _toLatin(gramms):
     res = []
     for el in gramms:
         res.append(_Translate.get(el, el))
     return res
+
 
 def _fixGramm(category, head, tail):
     gramm = set(head)
@@ -448,13 +492,13 @@ def _fixGramm(category, head, tail):
         else:
             gramm.add("praes")
 
-    if (("A" in gramm) or ("partcp" in gramm)) and not ("brev" in gramm) and not ("supr" in gramm) and not ("comp" in gramm):
+    if {"A", "partcp"}.intersection(gramm) and not {"brev", "supr", "comp"}.intersection(gramm):
         gramm.add("plen")
 
     if ("V" in gramm) and not ("pass" in gramm):
         gramm.add("act")
 
-    if ("V" in gramm) and not ("imper" in gramm) and not ("inf" in gramm) and not ("partcp" in gramm) and not ("ger" in gramm):
+    if ("V" in gramm) and not {"imper", "inf", "partcp", "ger"}.intersection(gramm):
         gramm.add("indic")
 
     if ("obsc" in gramm) and not ("norm" in gramm):
@@ -486,6 +530,7 @@ def _fixGramm(category, head, tail):
         gramm.append("NONLEX")
     return gramm
 
+
 def _badGramms(path):
     out = codecs.getwriter("utf-8")(file(path, "wb"), 'xmlcharrefreplace')
     for (key, val) in _Translate.items():
@@ -493,14 +538,13 @@ def _badGramms(path):
             out.write("%s;%s;\n" % (key, val))
     out.close()
 
+
 def main():
     # debug only
     out = codecs.getwriter("utf-8")(sys.stdout, 'xmlcharrefreplace')
 
     out.write("...\n")
-    lemm = Lemmer(langs=['ru'],
-                  addPath='',
-                  delPath='')
+    lemm = Lemmer(langs=['ru'])
     out.write(">\n")
 
     while True:
@@ -508,15 +552,16 @@ def main():
         if not l:
             break
         ul = codecs.getdecoder("utf-8")(l, "replace")[0]
-        (b, x) = lemm.parse(ul)
-        out.write("%s %s:\n" % (b, len(x)))
-        for (key, val) in x.items():
-            out.write("    %s %s:\n" % (key[0], key[1]))
-            for el in val:
-                out.write("        ")
-                for ell in el:
-                    out.write("%s " % ell)
-                out.write("\n")
+        parses = lemm.parse_tokens_context_aware(ul.split())
+        for token_parses in parses:
+            for parse_range, parse_list in token_parses:
+                print parse_range
+                #for el in parse_list:
+                #    out.write("        ")
+                #    for ell in el:
+                #        out.write("%s " % ell)
+                #    out.write("\n")
+
 
 if __name__ == "__main__":
     main()

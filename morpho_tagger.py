@@ -12,10 +12,8 @@ from modules import common, element_stack, fs_walk, config, lemmer_cache, task_l
 LEMMERS = {}
 default_lang = 'rus'
 
-langs_without_lemmer = frozenset(
-    ("hr", "hsb", "la", "lt", "lv", "mk", "nl", "sk", "sl", "sr", "sv")
-)
-manual_tagging_langs = frozenset(["pl"])
+langs_without_lemmer = {"hr", "hsb", "la", "lt", "lv", "mk", "nl", "sk", "sl", "sr", "sv"}
+manual_tagging_langs = {"pl"}
 
 number_re = re.compile(ur'[0-9,.-]+$')
 
@@ -30,7 +28,6 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
         self.distForm = '' # normal form of the distinct word
         self.lang = ''
         self.lemmer = LEMMERS[default_lang]
-        self.do_not_parse_word = False
         self.do_not_parse_sentence = False
 
     def startDocument(self):
@@ -49,6 +46,7 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
         if tag == 'w':
             self.within_word = True
         if tag == 'se':
+            self.sentence_buffer = []
             self.lang = attrs.get('lang', default_lang)
             if len(self.lang) > 2 and self.lang[-2] == "_":
                 self.lang = self.lang[:-2]
@@ -64,13 +62,14 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
     def endElement(self, tag):
         self.element_stack.endTag(tag)
         if tag == 'se':
+            if not self.do_not_parse_sentence:
+                self.tag_sentence()
+            self.collapse_element_stack()
             self.do_not_parse_sentence = False
         if tag == 'w':
             self.within_word = False
-            if not self.do_not_parse_sentence and not self.do_not_parse_word:
-                self.tag_last_word()
-            self.do_not_parse_word = False
-            self.collapse_element_stack()
+            if not self.do_not_parse_sentence:
+                pass
 
     def characters(self, content):
         self.element_stack.addChars(content)
@@ -89,99 +88,109 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
                 result += ''.join(in_delimiters[atomic_index: atomic_index + 1])
         return result
 
-    # determining the tag region of the last word
-    def tag_last_word(self):
-        PLUS_INFINITY = 99999
-        MINUS_INFINITY = -99999
-        tag_indices = [len(self.element_stack) - 1, len(self.element_stack) - 1]
-        plaintext = ''
-        content_coordinates = [PLUS_INFINITY, MINUS_INFINITY]
-        # searching for <w> tag open
+    def tag_sentence(self):
+        se_close_index = len(self.element_stack) - 1
+        se_open_index = self.__find_tag_open_index(se_close_index)
+        word_regions = self.__find_all_word_tag_coordinates_in_range(se_open_index, se_close_index)
+
+        coordinates, content = [], []
+        for region_begin, region_end in word_regions:
+            region_coordinates, region_content = \
+                self.__collect_content_between_tags(region_begin, region_end)
+            coordinates.append(region_coordinates)
+            content.append(region_content)
+        parses = self.lemmer.parse_tokens_context_aware(content)
+
+        assert len(content) == len(parses)
+        for content, coordinates, tag_indices, parse \
+        in reversed(zip(content, coordinates, word_regions, parses)):
+            self.tag_word(content, coordinates, tag_indices, parse)
+
+    # searching for the open tag from the end of element stack
+    def __find_tag_open_index(self, in_tag_close_index):
+        close_element = self.element_stack.storage[in_tag_close_index]
+        assert close_element[0] == 'tag_close'
+        tag = close_element[1]
+
+        tag_index = in_tag_close_index
         keep_searching = True
-        index = tag_indices[0]
-        while keep_searching:
+        while not tag_index < 0:
+            element = self.element_stack.storage[tag_index]
+            if element[0] == 'tag_open' and element[1] == 'se':
+                keep_searching = False
+            tag_index -= 1
+        return tag_index
+
+    def __find_all_word_tag_coordinates_in_range(self, in_range_begin, in_range_end):
+        tags = []
+        for index in xrange(in_range_begin, in_range_end + 1):
+            element = self.element_stack.storage[index]
+            if element[:2] == ('tag_open', 'w'):
+                tags.append([index, None])
+            if element[:2] == ('tag_close', 'w'):
+                tags[-1][1] = index
+        return tags
+
+    def __collect_content_between_tags(self, in_tag_open_index, in_tag_close_index):
+        coordinates = [-1, -1]
+        content = ''
+        for index in xrange(in_tag_open_index + 1, in_tag_close_index):
             element = self.element_stack.storage[index]
             if element[0] == 'content':
-                plaintext = element[1] + plaintext
-                content_coordinates[0] = min(content_coordinates[0], element[2])
-                content_coordinates[1] = max(content_coordinates[1], element[3])
-            if element[0] == 'tag_open' and element[1] == 'w':
-                tag_indices[0] = index
-                keep_searching = False
-            index -= 1
-            if index < 0:
-                keep_searching = False
-        self.parse_word(plaintext, content_coordinates, tag_indices)
+                content += element[1]
+                if coordinates[0] == -1:
+                    coordinates[0] = element[2]
+                coordinates[1] = element[3]
+        return coordinates, content
+
+    def parse_sentence(self, in_content_with_coordinates, in_tag_indices):
+        tokens = [content for content, coordinates in in_content_with_coordinates]
+        parses = self.lemmer.parse_tokens_context_aware(tokens)
+
+        for token, parse in reversed(zip(tokens, parses)):
+            content_tag_index = in_tag_indices[0] + 1
+            while self.element_stack.storage[content_tag_index][0] != 'content'\
+                  and content_tag_index < in_tag_indices[1]:
+                content_tag_index += 1
+            if self.element_stack.storage[content_tag_index][0] != 'content':
+                raise RuntimeError('Could not find content element while parsing "%s" %d' %
+                                   (word, str(in_coordinates)))
 
     # annotating the content within the tag region with <ana>'s
     # and splitting compounds into multiple <w>'s
-    def parse_word(self, word, in_coordinates, in_tag_indices):
+    def tag_word(self, in_word, in_content_coordinates, in_tag_indices, in_parse):
         content_tag_index = in_tag_indices[0] + 1
-        while self.element_stack.storage[content_tag_index][0] != 'content'\
-              and content_tag_index < in_tag_indices[1]:
-            content_tag_index += 1
-        if self.element_stack.storage[content_tag_index][0] != 'content':
-            raise RuntimeError('Could not find content element while parsing "%s" %d' %
-                               (word, str(in_coordinates)))
+        while content_tag_index != len(self.element_stack.storage) \
+              and self.element_stack.storage[content_tag_index][0] != 'content':
+              content_tag_index += 1
+        if content_tag_index == len(self.element_stack.storage):
+            raise RuntimeError('Could not find content element in the stack!')
 
-        pretty_apostrophe = u'\u2019'
-        apostrophe = u'\''
-        clearword = word.replace(u'\u0300', '') \
-                    .replace(u'\u0301', '') \
-                    .replace(pretty_apostrophe, apostrophe) \
-                    .strip()
-        if number_re.match(clearword):
+        if number_re.match(in_word):
             tag = ('tag_open_close',
                    'ana',
-                   self.process_features({'lex': common.quoteattr(clearword),
+                   self.process_features({'lex': common.quoteattr(in_word),
                                           'gr': 'NUM,ciph',
-                                          'disamb': 'yes'})
-            )
+                                          'disamb': 'yes'}))
             self.element_stack.insert_tag_into_content(content_tag_index,
-                                                       in_coordinates[0],
+                                                       in_content_coordinates[0],
                                                        tag)
             return
-        elif not clearword or self.lemmer == None:
-            tag = ('tag_open_close', 'ana', self.process_features({'lex': '?',
-                                                                   'gr': 'NONLEX'}))
+        elif not in_word or self.lemmer == None:
+            tag = ('tag_open_close', 'ana', self.process_features({'lex': '?', 'gr': 'NONLEX'}))
             self.element_stack.insert_tag_into_content(content_tag_index,
-                                                       in_coordinates[0],
+                                                       in_content_coordinates[0],
                                                        tag)
         else:
-            word_for_parse = clearword
-            COMPOUND_WORD_DELIMITER = '\-+|\'|%s' % pretty_apostrophe
-            for bracket in common.editor_brackets:
-                word_for_parse = word_for_parse.replace(bracket, '')
+            word_for_parse = in_word
             if not len(word_for_parse):
-                tag = ('tag_open_close', 'ana', self.process_features({'lex': '?',
-                                                                       'gr': 'NONLEX'}))
+                tag = ('tag_open_close', 'ana', self.process_features({'lex': '?', 'gr': 'NONLEX'}))
                 self.element_stack.insert_tag_into_content(content_tag_index,
-                                                           in_coordinates[0],
+                                                           in_content_coordinates[0],
                                                            tag)
                 return
-            (compound, analysis) = self.__get_analysis(word_for_parse)
 
-            word_parts = re.split(COMPOUND_WORD_DELIMITER, word)
-            delimiters = re.findall(COMPOUND_WORD_DELIMITER, word)
-
-            analysis_segments = sorted(analysis.keys())
-            parsed_tokens = []
-
-            # generating element stack entries for all word and delimiter tokens
-            token_begin = in_coordinates[0]
-            for segment in analysis_segments:
-                if segment[0] != 0 and segment[0] <= len(delimiters):
-                    delimiter = delimiters[segment[0] - 1]
-                    parsed_tokens.append(('delim', token_begin, token_begin + len(delimiter)))
-                    token_begin += len(delimiter)
-                atomic_word = self.build_parsed_segment(segment, word_parts, delimiters)
-                parsed_tokens.append(('word',
-                                      token_begin,
-                                      token_begin + len(atomic_word),
-                                      segment))
-                token_begin += len(atomic_word)
-
-            self.markup_word_parses(in_tag_indices, parsed_tokens, analysis)
+            self.__markup_word_parses(in_tag_indices, in_content_coordinates, in_parse)
 
     def __get_analysis(self, in_word):
         if USE_LEMMER_CACHE:
@@ -201,52 +210,58 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
         return ' '.join(features_filtered)
 
 
-    def markup_word_parses(self, in_tag_indices, in_parsed_tokens, in_analysis):
-        target_element_index = in_tag_indices[0]
-        last_word_open_index = target_element_index
+    def __markup_word_parses(self, in_tag_indices, in_content_coordinates, in_parse):
+        word_open_index, word_close_index = in_tag_indices
+        unclosed_w_tag = False
+        # processing each subparse from last to first,
+        # as in "Saint-Petersburg-Moscow", we'll have these subparses: (Saint-Petersburg)-(Moscow)
+        for index in xrange(len(in_parse) - 1, -1, -1):
+            parse_coordinates, parse = in_parse[index]
+            absolute_begin = in_content_coordinates[0] + parse_coordinates[0]
+            absolute_end = in_content_coordinates[0] + parse_coordinates[1]
+            print absolute_begin, absolute_end
+            content_element_index = self.find_content_element_by_coordinate(absolute_begin)
 
-        # inserting elements into the element stack
-        for index in xrange(len(in_parsed_tokens)):
-            token = in_parsed_tokens[index]
-            if token[0] == 'word':
-                if index != 0:
-                    content_element_index = self.find_content_element_by_coordinate(token[1])
-                    target_element_index = \
-                        self.element_stack.insert_tag_into_content(content_element_index,
-                                                                   token[1],
-                                                                   ('tag_open', 'w', ''))
-                    last_word_open_index = target_element_index
-                ana_tags = self.build_tags_for_parse(in_analysis[token[3]])
-                for tag in ana_tags:
-                    target_element_index += 1
-                    self.element_stack.storage.insert(target_element_index, tag)
-                    content_element_index = self.find_content_element_by_coordinate(token[2])
-                if index != len(in_parsed_tokens) - 1:
-                    target_element_index = \
-                        self.element_stack.insert_tag_into_content(content_element_index,
-                                                                   token[2],
-                                                                   ('tag_close', 'w', ''))
-                else:
-                    for word_close_index in xrange(target_element_index, len(self.element_stack)):
-                        if self.element_stack.storage[word_close_index][:2] == ('tag_close', 'w'):
-                            target_element_index = word_close_index
-                            break
-                (last_word_open_index, target_element_index) = \
-                    self.element_stack.fix_intersected_tags(last_word_open_index,
-                                                            target_element_index)
+            # we go from last to first, so we start off each time with </w>
+            if unclosed_w_tag:
+                word_close_index = self.element_stack.insert_tag_into_content(content_element_index,
+                                                                              absolute_end,
+                                                                              ('tag_close', 'w', ''))
+                unclosed_w_tag = False
+                content_element_index = word_close_index - 1
+            # for each "tail" subparse, we have to insert an additional <w> tag
+            if index != 0:
+                word_open_index = self.element_stack.insert_tag_into_content(content_element_index,
+                                                                             absolute_begin,
+                                                                             ('tag_open', 'w', ''))
+                unclosed_w_tag = True
+                word_close_index += 1 + word_open_index - content_element_index
+            else:
+                word_open_index = in_tag_indices[0]
+            ana_tags = self.build_tags_for_parse(parse)
+            word_close_index += len(ana_tags)
+            for tag in reversed(ana_tags):
+                self.element_stack.storage.insert(word_open_index + 1, tag)
+            for el in self.element_stack.storage:
+                print el
+            print word_open_index, word_close_index
+            print '\n\n\n'
+            #word_open_index, word_close_index = \
+            #    self.element_stack.fix_intersected_tags(word_open_index, word_close_index)
 
     def find_content_element_by_coordinate(self, in_coordinate):
         storage = self.element_stack.storage
         for element_index in xrange(len(storage)):
             if storage[element_index][0] == 'content':
                 coordinates = storage[element_index][2:]
-                if in_coordinate >= coordinates[0] and in_coordinate <= coordinates[1]:
+                if coordinates[0] <= in_coordinate and in_coordinate < coordinates[1]:
                     return element_index
         return -1
 
     def build_tags_for_parse(self, in_ambiguous_parse):
         tags = []
         for parse in in_ambiguous_parse:
+            assert len(parse) == 4
             lemma, parse_variants, language, disamb = parse
             for gramm, sem, semall in parse_variants:
                 features = {
@@ -358,7 +373,7 @@ def main():
 
     if os.path.isdir(inpath):
         fs_walk.process_directory(inpath, outpath, task_list.add_task)
-        return_codes = task_list.execute_tasks(convert_and_log)
+        return_codes = task_list.execute_tasks_single_thread(convert_and_log)
         retcode = sum([1 if code is not None else 0 for code in return_codes])
     else:
         retcode = convert_and_log((inpath, outpath))
