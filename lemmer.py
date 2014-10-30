@@ -12,9 +12,13 @@ import itertools
 
 import semantics
 import mystem_wrapper
+import token_transformation
+
+from modules import common
 
 to_encoding = codecs.getencoder("utf-8")
 from_encoding = codecs.getdecoder("utf-8")
+
 
 _Translate = {
     u'indet': u'indef',
@@ -35,6 +39,7 @@ _Translate = {
     u'obsol': u'oldused',
     u'parenth': u'PARENTH',
 }
+
 
 _good_grams = {
     u"S", u"A", u"NUM", u"ANUM", u"V", u"ADV", u"PRAEDIC", u"PARENTH",
@@ -60,8 +65,10 @@ _good_grams = {
     u"NONLEX", u"obsc"
 }
 
+
 _CapitalFeatures = {"famn", "persn", "patrn", "topon"}
 _DoNotRemoveDuplicates = {"famn", "persn", "patrn", "topon"}
+
 
 class Lemmer:
     def __init__ (self,
@@ -83,8 +90,15 @@ class Lemmer:
         if addPath:
             f = codecs.getreader("utf-8")(file(addPath, "rb"))
             for l in f:
-                x = l.replace(u"<ana", "@").replace("lex=", "").replace("gr=", "").replace("/>", "").replace(">", "") \
-                    .replace("\"", " ").replace("=", ",").rstrip().split("@")
+                x = l.replace(u"<ana", "@") \
+                     .replace("lex=", "") \
+                     .replace("gr=", "") \
+                     .replace("/>", "") \
+                     .replace(">", "") \
+                     .replace("\"", " ") \
+                     .replace("=", ",") \
+                     .rstrip() \
+                     .split("@")
                 form = x[0].lstrip().rstrip()
                 if form not in self.Add:
                     self.Add[form] = []
@@ -122,14 +136,20 @@ class Lemmer:
         pass
 
     def parse_tokens_context_aware(self, in_tokens, languageFilter=[]):
-        tokens = [token.lower() for token in in_tokens]
+        is_enclosed = lambda lhs, rhs: rhs[0] <= lhs[0] and lhs[1] <= rhs[1]
+        transformed_tokens = []
+        transformation_sequences = []
+        for token in in_tokens:
+            transformed_token, transformation_sequence = token_transformation.transform_token(token)
+            transformed_tokens.append(transformed_token)
+            transformation_sequences.append(transformation_sequence)
         token_regions = []
         last_position = 0
-        for token in in_tokens:
+        for token in transformed_tokens:
             token_regions.append((last_position, last_position + len(token)))
             last_position += len(token) + 1 # 1 for a whitespace
-        parsed_tokens = self.mystem_wrapper.analyze_tokens(in_tokens)
-        is_enclosed = lambda lhs, rhs: rhs[0] <= lhs[0] and lhs[1] <= rhs[1]
+
+        parsed_tokens = self.mystem_wrapper.analyze_tokens(transformed_tokens)
         result = []
         for result_slot in in_tokens:
             result.append([])
@@ -149,10 +169,22 @@ class Lemmer:
                 assert len(processed_parse) < 2
                 # if it's not explicitly present in the input as well as doesn't have a parse,
                 # it's treated as garbage
-                if token_text in tokens or processed_parse:
-                    result[token_index].append((relative_region, processed_parse[0]))
+                detransformed_token_region, detransformed_token_text = \
+                    token_transformation.detransform_token(transformation_sequences[token_index],
+                                                           relative_region)
+                if detransformed_token_text in in_tokens or processed_parse:
+                    result[token_index].append((detransformed_token_region, processed_parse[0]))
             last_position += len(token_text)
         return result
+
+    def __get_token_special_symbols_map(self, in_token):
+        special_symbol_map = {}
+        for special_symbol in Lemmer.SPECIAL_SYMBOLS:
+            symbol_indices = [index for index, symbol in enumerate(token) \
+                              if symbol == special_symbol]
+            if symbol_indices:
+                special_symbol_map[special_symbol] = symbol_indices
+        return special_symbol_map
 
     def __process_parse(self, in_parsed_token, languageFilter=[]):
         result = {}
@@ -160,8 +192,10 @@ class Lemmer:
         word = in_parsed_token['text'].strip()
         if len(word):
             lword = word.lower()
-            table = {} # (start, end) -> [(lemma, [(gramm, sem, semall)], language)]
-            temp = self.Add.get(lword, None) # check if this word has its own special morphological analysis
+            # the table is a dict: (start, end) -> [(lemma, [(gramm, sem, semall)], language)]
+            table = {}
+            # check if this word has its own special morphological analysis
+            temp = self.Add.get(lword, None)
 
             if temp != None:
                 if self.reallyAdd:
@@ -213,8 +247,9 @@ class Lemmer:
                 if (word, lemma, category) in self.Del or (lword, llemma, category) in self.Del:
                     continue
                 to_delete = False
-                lexical_feature_set = set([_Translate[feature] if feature in _Translate else feature \
-                                           for feature in lexical_feature])
+                lexical_feature_set = \
+                    set([_Translate[feature] if feature in _Translate else feature \
+                         for feature in lexical_feature])
                 for (del_pattern, del_lemma, del_category) in self.DelPatterns:
                     if del_lemma in (lemma, llemma) and \
                          del_category.issubset(set(lexical_feature_set)) and \
@@ -277,7 +312,6 @@ class Lemmer:
                         if language == "uk" and "gNotpast" in gr:
                             gr.discard("gNotpast")
                             gr.add("fut")
-
                         gr = list(gr)
                         gr.sort()
                         gr = [category] + gr
@@ -424,6 +458,7 @@ class Lemmer:
             return (",".join(gramm), sem, semall)
         else:
             return (",".join(gramm), "", "")
+
 
 # given a set of parsed word segments, finds a connected sequence
 # of segments with maximal individual length

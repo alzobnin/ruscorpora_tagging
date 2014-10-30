@@ -24,15 +24,25 @@ cap_char_re = re.compile(ur'[%s]' % cap_chars)
 low_char_re = re.compile(ur'[%s]' % low_chars)
 
 word_pattern = ur'([%s]*[%s]+[%s%s]*)+([%s]([%s%s])+)*|[0-9]+([.,-][0-9]+)*'
+
+editor_brackets_re = '|'.join(['\\' + bracket for bracket in common.EDITOR_BRACKETS])
 word_re = re.compile(word_pattern % \
-                     (common.editor_brackets, chars, chars, common.editor_brackets,
+                     (editor_brackets_re,
+                      chars,
+                      chars,
+                      editor_brackets_re,
                       token_separators,
                       chars,
-                      common.editor_brackets))
+                      editor_brackets_re))
+
 ext_word_re = re.compile(word_pattern % \
-                         (common.editor_brackets, chars, chars, common.editor_brackets,
+                         (editor_brackets_re,
+                          chars, chars,
+                          editor_brackets_re,
                           ext_token_separators,
-                          chars, common.editor_brackets))
+                          chars,
+                          editor_brackets_re))
+
 dot_in_digits_re = re.compile(u'[0-9]+[.][0-9]+')
 dot_before_lowercase_re = re.compile(u'[.] *[%s]+' % low_chars)
 # sentence_end_re = re.compile(ur'\.\.\.|[.?!]')

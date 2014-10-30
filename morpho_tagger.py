@@ -17,9 +17,6 @@ manual_tagging_langs = {"pl"}
 
 number_re = re.compile(ur'[0-9,.-]+$')
 
-USE_LEMMER_CACHE = False
-LEMMER_CACHE = lemmer_cache.LemmerCache()
-
 class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
     def __init__(self, outfile):
         self.out = outfile
@@ -192,16 +189,6 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
 
             self.__markup_word_parses(in_tag_indices, in_content_coordinates, in_parse)
 
-    def __get_analysis(self, in_word):
-        if USE_LEMMER_CACHE:
-            global LEMMER_CACHE
-            if in_word not in LEMMER_CACHE:
-                (compound, analysis) = self.lemmer.parse(in_word)
-                LEMMER_CACHE[in_word] = (compound, analysis)
-            return LEMMER_CACHE[in_word]
-        else:
-            return self.lemmer.parse(in_word)
-
     def process_features(self, in_features):
         features_filtered = []
         for (feature, value) in in_features.iteritems():
@@ -373,7 +360,7 @@ def main():
 
     if os.path.isdir(inpath):
         fs_walk.process_directory(inpath, outpath, task_list.add_task)
-        return_codes = task_list.execute_tasks_single_thread(convert_and_log)
+        return_codes = task_list.execute_tasks(convert_and_log)
         retcode = sum([1 if code is not None else 0 for code in return_codes])
     else:
         retcode = convert_and_log((inpath, outpath))
