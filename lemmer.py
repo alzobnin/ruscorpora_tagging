@@ -69,6 +69,8 @@ _good_grams = {
 _CapitalFeatures = {"famn", "persn", "patrn", "topon"}
 _DoNotRemoveDuplicates = {"famn", "persn", "patrn", "topon"}
 
+NUMBER_RE = re.compile(ur'[0-9,.-]+$')
+
 
 class Lemmer:
     def __init__ (self,
@@ -78,8 +80,8 @@ class Lemmer:
                   delPath="",
                   full=False,
                   addLang=False,
-                  reallyAdd = False):
-        self.mystem_wrapper = mystem_wrapper.MystemWrapper()
+                  reallyAdd=False,
+                  mystem=None):
         self.langs = langs
         self.dictionary = semantics.SemanticDictionary(dictionaryPath)
         self.full = full
@@ -131,6 +133,7 @@ class Lemmer:
                 else:
                     self.Del.add(tuple(x[0:3]))
             f.close()
+        self.mystem = mystem if mystem else mystem_wrapper.MystemWrapper()
 
     def Reset(self):
         pass
@@ -149,7 +152,8 @@ class Lemmer:
             token_regions.append((last_position, last_position + len(token)))
             last_position += len(token) + 1 # 1 for a whitespace
 
-        parsed_tokens = self.mystem_wrapper.analyze_tokens(transformed_tokens)
+        parsed_tokens = self.mystem.analyze_tokens(transformed_tokens)
+
         result = []
         for result_slot in in_tokens:
             result.append([])
@@ -167,13 +171,14 @@ class Lemmer:
                 relative_region = (range_begin - token_region_begin, range_end - token_region_begin)
                 processed_parse = self.__process_parse(parsed_token).values()
                 assert len(processed_parse) < 2
-                # if it's not explicitly present in the input as well as doesn't have a parse,
-                # it's treated as garbage
+                result_parse = processed_parse[0] if processed_parse else None
                 detransformed_token_region, detransformed_token_text = \
                     token_transformation.detransform_token(transformation_sequences[token_index],
                                                            relative_region)
+                # if it's not explicitly present in the input and doesn't have a parse as well,
+                # it's treated as garbage
                 if detransformed_token_text in in_tokens or processed_parse:
-                    result[token_index].append((detransformed_token_region, processed_parse[0]))
+                    result[token_index].append((detransformed_token_region, result_parse))
             last_position += len(token_text)
         return result
 
@@ -190,7 +195,14 @@ class Lemmer:
         result = {}
 
         word = in_parsed_token['text'].strip()
-        if len(word):
+        analyses = in_parsed_token.get('analysis', None)
+        if not len(word):
+            result = {(0,1): [('?', [('NONLEX', '', '')], 'ru', 'nodisamb')]}
+        elif not analyses:
+            result = {(0,1): [(word, [('NONLEX', '', '')], 'ru', 'nodisamb')]}
+        elif NUMBER_RE.match(word):
+            result = {(0,1): [(word, [('NUM,ciph', '', '')], 'ru', 'disamb')]}
+        else:
             lword = word.lower()
             # the table is a dict: (start, end) -> [(lemma, [(gramm, sem, semall)], language)]
             table = {}
@@ -208,9 +220,6 @@ class Lemmer:
                 if temp != None:
                     for el in temp:
                         table[(0, 1)] = table.get((0, 1), []) + [(el[0], el[1], 'ru', 'disamb')]
-            analyses = in_parsed_token.get('analysis', None)
-            if not analyses:
-                return result
             minNormFirst = maxNormLast = None
             for ana_id, ana in zip(itertools.count(), analyses):
                 disamb = 'disamb' if not ana_id else 'nodisamb'
@@ -332,7 +341,7 @@ class Lemmer:
                         minNormFirst = first
                         maxNormLast = last
 
-            if len(table) == 0:
+            if not table:
                 result = {(0,1): [(word, [('NONLEX', '', '')], 'ru', 'nodisamb')]}
             else:
                 complete_parse_builder = SegmentCoveringParseBuilder()
@@ -427,9 +436,10 @@ class Lemmer:
         # comp -> comp2 for words with true prefix "по"
         if language=="ru" and "comp" in gramm and prefixCount(word, u"по") > prefixCount(lemma, u"по"):
             subword = word[2:]
-            subanalyses = self.mystem_wrapper.analyze_token(subword)['analysis']
+            subanalyses = self.mystem.analyze_token(subword)['analysis']
             for ana in subanalyses:
                 ana_first, ana_last = 0, 1
+                ana_bastardness = ana.get('qual', '') == 'bastard'
                 if ana_first == 0 and ana_last == 1 and not ana_bastardness:
                     form_feature, lexical_feature = [features.split(',')
                                                      for features in ana['gr'].split('=')]
@@ -596,6 +606,16 @@ def main():
                 #    for ell in el:
                 #        out.write("%s " % ell)
                 #    out.write("\n")
+
+
+class DummyLemmer(object):
+    def parse_tokens_context_aware(self, in_tokens, in_language_fileter=[]):
+        result = [((0, len(token)), [(word, [('NONLEX', '', '')], 'ru', 'nodisamb')]) \
+                  for token in in_tokens]
+        return result
+
+    def Reset(self):
+        pass
 
 
 if __name__ == "__main__":

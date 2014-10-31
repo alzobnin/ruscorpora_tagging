@@ -6,16 +6,18 @@ from optparse import OptionParser
 import os
 import re
 import xml.sax
+import multiprocessing
+
 import lemmer
+import mystem_wrapper
 from modules import common, element_stack, fs_walk, config, lemmer_cache, task_list
 
 LEMMERS = {}
-default_lang = 'rus'
+DEFAULT_LANG = 'rus'
 
-langs_without_lemmer = {"hr", "hsb", "la", "lt", "lv", "mk", "nl", "sk", "sl", "sr", "sv"}
-manual_tagging_langs = {"pl"}
+LANGS_WITHOUT_LEMMER = {"hr", "hsb", "la", "lt", "lv", "mk", "nl", "sk", "sl", "sr", "sv"}
+MANUAL_TAGGING_LANGS = {"pl"}
 
-number_re = re.compile(ur'[0-9,.-]+$')
 
 class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
     def __init__(self, outfile):
@@ -24,7 +26,7 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
         self.within_word = False
         self.distForm = '' # normal form of the distinct word
         self.lang = ''
-        self.lemmer = LEMMERS[default_lang]
+        self.lemmer = get_lemmer(DEFAULT_LANG)
         self.do_not_parse_sentence = False
 
     def startDocument(self):
@@ -44,16 +46,16 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
             self.within_word = True
         if tag == 'se':
             self.sentence_buffer = []
-            self.lang = attrs.get('lang', default_lang)
+            self.lang = attrs.get('lang', DEFAULT_LANG)
             if len(self.lang) > 2 and self.lang[-2] == "_":
                 self.lang = self.lang[:-2]
-            if self.lang in langs_without_lemmer:
-                self.lemmer = None
+            if self.lang in LANGS_WITHOUT_LEMMER:
+                self.lemmer = get_lemmer('dummy')
             elif not self.lang in LEMMERS:
-                self.lemmer = LEMMERS['']
+                self.lemmer = get_lemmer('')
             else:
-                self.lemmer = LEMMERS[self.lang]
-            if self.lang in manual_tagging_langs:
+                self.lemmer = get_lemmer(self.lang)
+            if self.lang in MANUAL_TAGGING_LANGS:
                 self.do_not_parse_sentence = True
 
     def endElement(self, tag):
@@ -77,14 +79,6 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
     def collapse_element_stack(self):
         self.out.write(self.element_stack.collapse())
 
-    def build_parsed_segment(self, in_segment, in_word_parts, in_delimiters):
-        result = ''
-        for atomic_index in xrange(in_segment[0], in_segment[1]):
-            result += in_word_parts[atomic_index]
-            if atomic_index != in_segment[1] - 1:
-                result += ''.join(in_delimiters[atomic_index: atomic_index + 1])
-        return result
-
     def tag_sentence(self):
         se_close_index = len(self.element_stack) - 1
         se_open_index = self.__find_tag_open_index(se_close_index)
@@ -96,7 +90,10 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
                 self.__collect_content_between_tags(region_begin, region_end)
             coordinates.append(region_coordinates)
             content.append(region_content)
+        lock = multiprocessing.Lock()
+        lock.acquire()
         parses = self.lemmer.parse_tokens_context_aware(content)
+        lock.release()
 
         assert len(content) == len(parses)
         for content, coordinates, tag_indices, parse \
@@ -163,30 +160,6 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
         if content_tag_index == len(self.element_stack.storage):
             raise RuntimeError('Could not find content element in the stack!')
 
-        if number_re.match(in_word):
-            tag = ('tag_open_close',
-                   'ana',
-                   self.process_features({'lex': common.quoteattr(in_word),
-                                          'gr': 'NUM,ciph',
-                                          'disamb': 'yes'}))
-            self.element_stack.insert_tag_into_content(content_tag_index,
-                                                       in_content_coordinates[0],
-                                                       tag)
-            return
-        elif not in_word or self.lemmer == None:
-            tag = ('tag_open_close', 'ana', self.process_features({'lex': '?', 'gr': 'NONLEX'}))
-            self.element_stack.insert_tag_into_content(content_tag_index,
-                                                       in_content_coordinates[0],
-                                                       tag)
-        else:
-            word_for_parse = in_word
-            if not len(word_for_parse):
-                tag = ('tag_open_close', 'ana', self.process_features({'lex': '?', 'gr': 'NONLEX'}))
-                self.element_stack.insert_tag_into_content(content_tag_index,
-                                                           in_content_coordinates[0],
-                                                           tag)
-                return
-
             self.__markup_word_parses(in_tag_indices, in_content_coordinates, in_parse)
 
     def process_features(self, in_features):
@@ -206,7 +179,7 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
             parse_coordinates, parse = in_parse[index]
             absolute_begin = in_content_coordinates[0] + parse_coordinates[0]
             absolute_end = in_content_coordinates[0] + parse_coordinates[1]
-            print absolute_begin, absolute_end
+            # print absolute_begin, absolute_end
             content_element_index = self.find_content_element_by_coordinate(absolute_begin)
 
             # we go from last to first, so we start off each time with </w>
@@ -229,12 +202,6 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
             word_close_index += len(ana_tags)
             for tag in reversed(ana_tags):
                 self.element_stack.storage.insert(word_open_index + 1, tag)
-            for el in self.element_stack.storage:
-                print el
-            print word_open_index, word_close_index
-            print '\n\n\n'
-            #word_open_index, word_close_index = \
-            #    self.element_stack.fix_intersected_tags(word_open_index, word_close_index)
 
     def find_content_element_by_coordinate(self, in_coordinate):
         storage = self.element_stack.storage
@@ -262,12 +229,15 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
                 tags.append(('tag_open_close', 'ana', self.process_features(features)))
         return tags
 
+
 def convert_and_log(in_paths):
     retcode = convert(in_paths)
     print '"%s" morpho tagged - %s' % (in_paths[0], 'OK' if retcode == 0 else 'FAIL')
 
+
 def convert_wrapper(in_input, in_output):
     return convert((in_input, in_output))
+
 
 def convert(in_paths):
     (inpath, outpath) = in_paths
@@ -275,9 +245,8 @@ def convert(in_paths):
     if isinstance(outpath, str):
         out = codecs.getwriter(config.CONFIG['out_encoding'])(file(outpath, 'wb'), 'xmlcharrefreplace')
     for key in LEMMERS.keys():
-        if LEMMERS[key] != None:
+        if LEMMERS[key]:
             LEMMERS[key].Reset()
-
     retcode = 0
     try:
         tagger_handler = MorphoTaggerHandler(out)
@@ -288,27 +257,35 @@ def convert(in_paths):
         retcode = 1
     return retcode
 
+
 def initialize_lemmers(in_options):
     print 'Initializing...',
     global LEMMERS
 
+    wrapper = mystem_wrapper.MystemWrapper()
     # first parameter options.lemmer deleted
     LEMMERS = {
-        "ru": lemmer.Lemmer(["ru"], in_options.semdict, in_options.addpath, in_options.delpath,
-                            full=in_options.full, reallyAdd=in_options.addFixList),
-        "en": lemmer.Lemmer(["en"], full=in_options.full),
-        "de": lemmer.Lemmer(["de"], full=in_options.full),
-        "uk": lemmer.Lemmer(["uk"], full=in_options.full),
-        "be": lemmer.Lemmer(["be"], full=in_options.full),
-        "chu": lemmer.Lemmer(["chu"], full=in_options.full),
-        "fr": lemmer.Lemmer(["fr"], full=in_options.full),
-        "es": lemmer.Lemmer(["es"], full=in_options.full),
-        "it": lemmer.Lemmer(["it"], full=in_options.full),
-        "pt": lemmer.Lemmer(["pt"], full=in_options.full),
-        "ro": lemmer.Lemmer(["ro"], full=in_options.full),
-        "cs": lemmer.Lemmer(["cs"], full=in_options.full),
-        "bg": lemmer.Lemmer(["bg"], full=in_options.full),
-        "": lemmer.Lemmer([], full=in_options.full),
+        "ru": lemmer.Lemmer(["ru"],
+                            in_options.semdict,
+                            in_options.addpath,
+                            in_options.delpath,
+                            full=in_options.full,
+                            reallyAdd=in_options.addFixList,
+                            mystem=wrapper),
+        "en": lemmer.Lemmer(["en"], full=in_options.full, mystem=wrapper),
+        "de": lemmer.Lemmer(["de"], full=in_options.full, mystem=wrapper),
+        "uk": lemmer.Lemmer(["uk"], full=in_options.full, mystem=wrapper),
+        "be": lemmer.Lemmer(["be"], full=in_options.full, mystem=wrapper),
+        "chu": lemmer.Lemmer(["chu"], full=in_options.full, mystem=wrapper),
+        "fr": lemmer.Lemmer(["fr"], full=in_options.full, mystem=wrapper),
+        "es": lemmer.Lemmer(["es"], full=in_options.full, mystem=wrapper),
+        "it": lemmer.Lemmer(["it"], full=in_options.full, mystem=wrapper),
+        "pt": lemmer.Lemmer(["pt"], full=in_options.full, mystem=wrapper),
+        "ro": lemmer.Lemmer(["ro"], full=in_options.full, mystem=wrapper),
+        "cs": lemmer.Lemmer(["cs"], full=in_options.full, mystem=wrapper),
+        "bg": lemmer.Lemmer(["bg"], full=in_options.full, mystem=wrapper),
+        "dummy": lemmer.DummyLemmer(),
+        "": lemmer.Lemmer([], full=in_options.full, mystem=wrapper),
     }
     LEMMERS["rus"] = LEMMERS["ru"]
     LEMMERS["eng"] = LEMMERS["en"]
@@ -317,31 +294,61 @@ def initialize_lemmers(in_options):
     LEMMERS["bel"] = LEMMERS["be"]
 
     if in_options.lang and in_options.lang in LEMMERS:
-        global default_lang
-        default_lang = in_options.lang
-
+        global DEFAULT_LANG
+        DEFAULT_LANG = in_options.lang
     print 'done!'
+
+
+def get_lemmer(in_language):
+    lemmer = LEMMERS.get(in_language, LEMMERS['dummy'])
+    return lemmer
+
 
 def configure_option_parser(in_usage_string=''):
     parser = OptionParser(usage=in_usage_string)
 
-    parser.add_option("--input", dest="input", help="input path")
-    parser.add_option("--output", dest="output", help="output path")
-    parser.add_option("--lang", dest="lang", help="default language")
-    parser.add_option("--semdict", dest="semdict", help="semantic dictionary path")
-    parser.add_option("--add", dest="addpath", help="add.cfg path")
-    parser.add_option("--del", dest="delpath", help="del.cfg path")
-    parser.add_option("--full", action="store_true", dest="full", default=False,
+    parser.add_option("--input",
+                      dest="input",
+                      help="input path")
+    parser.add_option("--output",
+                      dest="output",
+                      help="output path")
+    parser.add_option("--lang",
+                      dest="lang",
+                      help="default language")
+    parser.add_option("--semdict",
+                      dest="semdict",
+                      help="semantic dictionary path")
+    parser.add_option("--add",
+                      dest="addpath",
+                      help="add.cfg path")
+    parser.add_option("--del",
+                      dest="delpath",
+                      help="del.cfg path")
+    parser.add_option("--full",
+                      action="store_true",
+                      dest="full",
+                      default=False,
                       help="use full morphology")
-    parser.add_option("--addFixList", action="store_true", dest="addFixList", default=False,
+    parser.add_option("--addFixList",
+                      action="store_true",
+                      dest="addFixList",
+                      default=False,
                       help="add fix list analyses instead of replacing analyses from lemmer")
-    parser.add_option('--output_encoding', dest='out_encoding', help='encoding of the output files', default='cp1251')
+    parser.add_option('--output_encoding',
+                      dest='out_encoding',
+                      help='encoding of the output files',
+                      default='cp1251')
     parser.add_option('--features',
                       dest='features',
                       help='what features to output: any \',\'-separated combination of [gr, lex, sem, sem2, disamb]',
                       default='lex,gr,sem,sem2,disamb')
-    parser.add_option('--jobs', dest='jobs_number', help='parallel jobs number', default='1')
+    parser.add_option('--jobs',
+                      dest='jobs_number',
+                      help='parallel jobs number',
+                      default='1')
     return parser
+
 
 def main():
     usage_string = 'Usage: morpho_tagger.py --input <input path> --output <output path> [options]'
@@ -353,14 +360,15 @@ def main():
         parser.print_help()
         exit(0)
 
-    initialize_lemmers(options)
-
     inpath = os.path.abspath(options.input)
     outpath = os.path.abspath(options.output)
 
     if os.path.isdir(inpath):
         fs_walk.process_directory(inpath, outpath, task_list.add_task)
-        return_codes = task_list.execute_tasks(convert_and_log)
+        worker_pool = multiprocessing.Pool(processes=config.CONFIG['jobs_number'],
+                                           initializer=initialize_lemmers,
+                                           initargs=[options])
+        return_codes = task_list.execute_tasks(convert_and_log, in_pool=worker_pool)
         retcode = sum([1 if code is not None else 0 for code in return_codes])
     else:
         retcode = convert_and_log((inpath, outpath))
