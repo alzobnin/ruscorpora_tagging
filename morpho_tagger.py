@@ -67,8 +67,6 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
             self.do_not_parse_sentence = False
         if tag == 'w':
             self.within_word = False
-            if not self.do_not_parse_sentence:
-                pass
 
     def characters(self, content):
         self.element_stack.addChars(content)
@@ -137,19 +135,6 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
                 coordinates[1] = element[3]
         return coordinates, content
 
-    def parse_sentence(self, in_content_with_coordinates, in_tag_indices):
-        tokens = [content for content, coordinates in in_content_with_coordinates]
-        parses = self.lemmer.parse_tokens_context_aware(tokens)
-
-        for token, parse in reversed(zip(tokens, parses)):
-            content_tag_index = in_tag_indices[0] + 1
-            while self.element_stack.storage[content_tag_index][0] != 'content'\
-                  and content_tag_index < in_tag_indices[1]:
-                content_tag_index += 1
-            if self.element_stack.storage[content_tag_index][0] != 'content':
-                raise RuntimeError('Could not find content element while parsing "%s" %d' %
-                                   (word, str(in_coordinates)))
-
     # annotating the content within the tag region with <ana>'s
     # and splitting compounds into multiple <w>'s
     def tag_word(self, in_word, in_content_coordinates, in_tag_indices, in_parse):
@@ -160,7 +145,7 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
         if content_tag_index == len(self.element_stack.storage):
             raise RuntimeError('Could not find content element in the stack!')
 
-            self.__markup_word_parses(in_tag_indices, in_content_coordinates, in_parse)
+        self.__markup_word_parses(in_tag_indices, in_content_coordinates, in_parse)
 
     def process_features(self, in_features):
         features_filtered = []

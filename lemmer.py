@@ -177,7 +177,8 @@ class Lemmer:
                                                            relative_region)
                 # if it's not explicitly present in the input and doesn't have a parse as well,
                 # it's treated as garbage
-                if detransformed_token_text in in_tokens or processed_parse:
+                if detransformed_token_text in in_tokens \
+                   or self.__has_meaningful_parse(result_parse):
                     result[token_index].append((detransformed_token_region, result_parse))
             last_position += len(token_text)
         return result
@@ -190,6 +191,13 @@ class Lemmer:
             if symbol_indices:
                 special_symbol_map[special_symbol] = symbol_indices
         return special_symbol_map
+
+    def __has_meaningful_parse(self, in_parses_list):
+        for lemma, parses, language, disamb in in_parses_list:
+            for parse in parses:
+                if parse[0] != 'NONLEX':
+                    return True
+        return False
 
     def __process_parse(self, in_parsed_token, languageFilter=[]):
         result = {}

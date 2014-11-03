@@ -42,8 +42,6 @@ def main():
     inpath = os.path.abspath(options.input)
     outpath = os.path.abspath(options.output)
 
-    morpho_tagger.initialize_lemmers(options)
-
     retcode = 0
     if os.path.isdir(inpath):
         fs_walk.process_directory(inpath, outpath, task_list.add_task)
@@ -53,6 +51,7 @@ def main():
         return_codes = task_list.execute_tasks(convert, worker_pool)
         retcode = sum([1 if code is not None else 0 for code in return_codes])
     else:
+        morpho_tagger.initialize_lemmers(options)
         retcode = convert((inpath, outpath)) is not None
     return retcode
 
