@@ -154,7 +154,6 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
                 features_filtered.append('%s="%s"' % (feature, value))
         return ' '.join(features_filtered)
 
-
     def __markup_word_parses(self, in_tag_indices, in_content_coordinates, in_parse):
         word_open_index, word_close_index = in_tag_indices
         unclosed_w_tag = False
@@ -169,16 +168,18 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
 
             # we go from last to first, so we start off each time with </w>
             if unclosed_w_tag:
-                word_close_index = self.element_stack.insert_tag_into_content(content_element_index,
-                                                                              absolute_end,
-                                                                              ('tag_close', 'w', ''))
+                word_close_index = \
+                    self.element_stack.insert_tag_into_content(content_element_index,
+                                                               absolute_end,
+                                                               ('tag_close', 'w', ''))
                 unclosed_w_tag = False
                 content_element_index = word_close_index - 1
             # for each "tail" subparse, we have to insert an additional <w> tag
             if index != 0:
-                word_open_index = self.element_stack.insert_tag_into_content(content_element_index,
-                                                                             absolute_begin,
-                                                                             ('tag_open', 'w', ''))
+                word_open_index = \
+                    self.element_stack.insert_tag_into_content(content_element_index,
+                                                               absolute_begin,
+                                                               ('tag_open', 'w', ''))
                 unclosed_w_tag = True
                 word_close_index += 1 + word_open_index - content_element_index
             else:
@@ -187,13 +188,14 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
             word_close_index += len(ana_tags)
             for tag in reversed(ana_tags):
                 self.element_stack.storage.insert(word_open_index + 1, tag)
+            self.element_stack.fix_intersected_tags(word_open_index, word_close_index)
 
     def find_content_element_by_coordinate(self, in_coordinate):
         storage = self.element_stack.storage
         for element_index in xrange(len(storage)):
             if storage[element_index][0] == 'content':
                 coordinates = storage[element_index][2:]
-                if coordinates[0] <= in_coordinate and in_coordinate < coordinates[1]:
+                if coordinates[0] <= in_coordinate < coordinates[1]:
                     return element_index
         return -1
 
