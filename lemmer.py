@@ -43,8 +43,13 @@ _Translate = {
 
 _good_grams = {
     u"S", u"A", u"NUM", u"ANUM", u"V", u"ADV", u"PRAEDIC", u"PARENTH",
-    u"SPRO", u"APRO", u"PRAEDICPRO", u"ADVPRO", u"PR", u"CONJ", u"PART", u"INTJ",u"COM",
-    u"nom", u"voc", u"gen", u"gen2", u"dat", u"acc", u"acc2", u"ins", u"loc", u"loc2", u"adnum",
+
+    u"SPRO", u"APRO", u"PRAEDICPRO", u"ADVPRO",
+    u"PR", u"CONJ", u"PART", u"INTJ", u"COM",
+
+    u"nom", u"voc", u"gen", u"gen2", u"dat",
+    u"acc", u"acc2", u"ins", u"loc", u"loc2", u"adnum",
+
     u"indic", u"imper", u"imper2", u"inf", u"partcp", u"ger",
     u"poss", u"comp", u"comp2",
     u"supr", u"plen", u"brev",
@@ -57,7 +62,10 @@ _good_grams = {
     u"act", u"pass", u"med",
     u"anim", u"inan",
     u"pf", u"ipf",
-    u"d_flex", u"d_type", u"d_refltype", u"d_refl", u"d_part", u"d_contr", u"d_num", u"d_gend", u"d_pref",
+
+    u"d_flex", u"d_type", u"d_refltype", u"d_refl",
+    u"d_part", u"d_contr", u"d_num", u"d_gend", u"d_pref",
+
     u"norm", u"ciph", u"anom", u"distort", u"bastard",
     u"INIT", u"abbr", u"0",
     u"diallex",
@@ -73,15 +81,15 @@ NUMBER_RE = re.compile(ur'[0-9,.-]+$')
 
 
 class Lemmer:
-    def __init__ (self,
-                  langs=[],
-                  dictionaryPath="",
-                  addPath="",
-                  delPath="",
-                  full=False,
-                  addLang=False,
-                  reallyAdd=False,
-                  mystem=None):
+    def __init__(self,
+                 langs=[],
+                 dictionaryPath="",
+                 addPath="",
+                 delPath="",
+                 full=False,
+                 addLang=False,
+                 reallyAdd=False,
+                 mystem=None):
         self.langs = langs
         self.dictionary = semantics.SemanticDictionary(dictionaryPath)
         self.full = full
@@ -118,7 +126,9 @@ class Lemmer:
                     for tl in tail:
                         s = set(tl.split(","))
                         s.discard("")
-                        res.append(self.createAttrs("", lemma, category, head, s))
+                        res.append(
+                            self.createAttrs("", lemma, category, head, s)
+                        )
                     self.Add[form].append((lemma, res, 'ru', 'disamb'))
             f.close()
 
@@ -129,7 +139,9 @@ class Lemmer:
             for l in f:
                 x = l.rstrip().split()
                 if x[0].endswith("*"):
-                    self.DelPatterns.append((x[0][:-1], x[1], set(x[2].split(','))))
+                    self.DelPatterns.append(
+                        (x[0][:-1], x[1], set(x[2].split(',')))
+                    )
                 else:
                     self.Del.add(tuple(x[0:3]))
             f.close()
@@ -143,14 +155,15 @@ class Lemmer:
         transformed_tokens = []
         transformation_sequences = []
         for token in in_tokens:
-            transformed_token, transformation_sequence = token_transformation.transform_token(token)
+            transformed_token, transformation_sequence = \
+                token_transformation.transform_token(token)
             transformed_tokens.append(transformed_token)
             transformation_sequences.append(transformation_sequence)
         token_regions = []
         last_position = 0
         for token in transformed_tokens:
             token_regions.append((last_position, last_position + len(token)))
-            last_position += len(token) + 1 # 1 for a whitespace
+            last_position += len(token) + 1  # 1 for a whitespace
 
         parsed_tokens = self.mystem.analyze_tokens(transformed_tokens)
 
@@ -162,24 +175,27 @@ class Lemmer:
         for parsed_token in parsed_tokens:
             assert 'text' in parsed_token
             token_text = parsed_token['text']
-            range_begin, range_end = last_position, last_position + len(token_text)
-            token_indices = [index for index in xrange(len(token_regions))
-                             if is_enclosed((range_begin, range_end), token_regions[index])]
+            range_begin, range_end = \
+                last_position, last_position + len(token_text)
+            token_indices = \
+                [index for index in xrange(len(token_regions))
+                 if is_enclosed((range_begin, range_end), token_regions[index])]
             if token_indices:
                 token_index = token_indices[0]
                 token_region_begin, token_region_end = token_regions[token_index]
                 relative_region = (range_begin - token_region_begin, range_end - token_region_begin)
-                processed_parse = self.__process_parse(parsed_token).values()
-                assert len(processed_parse) < 2
-                result_parse = processed_parse[0] if processed_parse else None
+                processed_parse_map = self.__process_parse(parsed_token)
+                assert (0, 1) in processed_parse_map, 'Invalid parse'
+                processed_parse = processed_parse_map[(0, 1)]
                 detransformed_token_region, detransformed_token_text = \
                     token_transformation.detransform_token(transformation_sequences[token_index],
                                                            relative_region)
                 # if it's not explicitly present in the input and doesn't have a parse as well,
                 # it's treated as garbage
                 if detransformed_token_text in in_tokens \
-                   or self.__has_meaningful_parse(result_parse):
-                    result[token_index].append((detransformed_token_region, result_parse))
+                    or self.__has_meaningful_parse(processed_parse) \
+                    or re.findall('\w+', detransformed_token_text, re.UNICODE):
+                    result[token_index].append((detransformed_token_region, processed_parse))
             last_position += len(token_text)
         return result
 
@@ -202,6 +218,7 @@ class Lemmer:
     def __process_parse(self, in_parsed_token, languageFilter=[]):
         result = {}
 
+        fixlist_applied = False
         word = in_parsed_token['text'].strip()
         analyses = in_parsed_token.get('analysis', None)
         if not len(word):
@@ -261,7 +278,9 @@ class Lemmer:
 
                 category = head[0]
                 llemma = lemma.lower()
-                if (word, lemma, category) in self.Del or (lword, llemma, category) in self.Del:
+                if (word, lemma, category) in self.Del \
+                    or (lword, llemma, category) in self.Del:
+                    fixlist_applied = True
                     continue
                 to_delete = False
                 lexical_feature_set = \
@@ -274,6 +293,7 @@ class Lemmer:
                         to_delete = True
                         break
                 if to_delete:
+                    fixlist_applied = True
                     continue
 
                 gramm = [] # all grammatic attributes for this lemma
@@ -350,7 +370,11 @@ class Lemmer:
                         maxNormLast = last
 
             if not table:
-                result = {(0,1): [(word, [('NONLEX', '', '')], 'ru', 'nodisamb')]}
+                result = \
+                {
+                    (0, 1): [(word, [('NONLEX', '', '')], 'ru', 'nodisamb')],
+                    'fixlist_applied': str(fixlist_applied)
+                }
             else:
                 complete_parse_builder = SegmentCoveringParseBuilder()
                 # parse segment covering is now made by mystem
@@ -358,7 +382,7 @@ class Lemmer:
                 # some parts of a compound word are not parsed (rejected or something),
                 # falling back to a single 'NONLEX' part
                 if not complete_parse:
-                    result = {(0,1): [(word, [('NONLEX', '', '')], 'ru', 'nodisamb')]}
+                    result = {(0, 1): [(word, [('NONLEX', '', '')], 'ru', 'nodisamb')]}
                 else:
                     complete_parse = self._removeDuplicates(complete_parse)
                     result = complete_parse

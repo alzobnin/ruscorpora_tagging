@@ -27,7 +27,9 @@ def execute_tasks_chunked(in_callback, in_chunk_size=100):
 
 
 def execute_tasks(in_callback, in_pool=None):
-    pool = in_pool if in_pool else multiprocessing.Pool(processes=config.CONFIG['jobs_number'])
+    pool = in_pool \
+        if in_pool \
+        else multiprocessing.Pool(processes=config.CONFIG['jobs_number'])
     try:
         result = pool.map(in_callback, TASKS)
         pool.close()

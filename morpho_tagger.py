@@ -338,7 +338,10 @@ def configure_option_parser(in_usage_string=''):
 
 
 def main():
-    usage_string = 'Usage: morpho_tagger.py --input <input path> --output <output path> [options]'
+    usage_string = \
+        'Usage: morpho_tagger.py ' \
+        '--input <input path> ' \
+        '--output <output path> [options]'
     parser = configure_option_parser(usage_string)
     (options, args) = parser.parse_args()
 
@@ -358,6 +361,7 @@ def main():
         return_codes = task_list.execute_tasks(convert_and_log, in_pool=worker_pool)
         retcode = sum([1 if code is not None else 0 for code in return_codes])
     else:
+        initialize_lemmers(options)
         retcode = convert_and_log((inpath, outpath))
     return retcode
 
