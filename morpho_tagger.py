@@ -4,19 +4,16 @@
 import codecs
 from optparse import OptionParser
 import os
-import re
 import xml.sax
 import multiprocessing
+import lemmer_holder
 
-import lemmer
-import mystem_wrapper
-from modules import common, element_stack, fs_walk, config, lemmer_cache, task_list
+from modules import common, element_stack, fs_walk, config, task_list
 
-LEMMERS = {}
-DEFAULT_LANG = 'rus'
-
+DEFAULT_LANG = 'ru'
 LANGS_WITHOUT_LEMMER = {"hr", "hsb", "la", "lt", "lv", "mk", "nl", "sk", "sl", "sr", "sv"}
 MANUAL_TAGGING_LANGS = {"pl"}
+LEMMER_HOLDER = None
 
 
 class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
@@ -26,11 +23,12 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
         self.within_word = False
         self.distForm = '' # normal form of the distinct word
         self.lang = ''
-        self.lemmer = get_lemmer(DEFAULT_LANG)
+        self.lemmer = LEMMER_HOLDER.get_lemmer(DEFAULT_LANG)
         self.do_not_parse_sentence = False
 
     def startDocument(self):
-        self.out.write('<?xml version="1.0" encoding="%s"?>\n' % config.CONFIG['out_encoding'])
+        self.out.write('<?xml version="1.0" encoding="%s"?>\n' %\
+                       config.CONFIG['out_encoding'])
 
     def endDocument(self):
         self.collapse_element_stack()
@@ -50,11 +48,9 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
             if len(self.lang) > 2 and self.lang[-2] == "_":
                 self.lang = self.lang[:-2]
             if self.lang in LANGS_WITHOUT_LEMMER:
-                self.lemmer = get_lemmer('dummy')
-            elif not self.lang in LEMMERS:
-                self.lemmer = get_lemmer('')
+                self.lemmer = LEMMER_HOLDER.get_lemmer(DEFAULT_LANG)
             else:
-                self.lemmer = get_lemmer(self.lang)
+                self.lemmer = LEMMER_HOLDER.get_lemmer(self.lang)
             if self.lang in MANUAL_TAGGING_LANGS:
                 self.do_not_parse_sentence = True
 
@@ -80,7 +76,9 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
     def tag_sentence(self):
         se_close_index = len(self.element_stack) - 1
         se_open_index = self.__find_tag_open_index(se_close_index)
-        word_regions = self.__find_all_word_tag_coordinates_in_range(se_open_index, se_close_index)
+        word_regions = \
+            self.__find_all_word_tag_coordinates_in_range(se_open_index,
+                                                          se_close_index)
 
         coordinates, content = [], []
         for region_begin, region_end in word_regions:
@@ -113,7 +111,9 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
             tag_index -= 1
         return tag_index
 
-    def __find_all_word_tag_coordinates_in_range(self, in_range_begin, in_range_end):
+    def __find_all_word_tag_coordinates_in_range(self,
+                                                 in_range_begin,
+                                                 in_range_end):
         tags = []
         for index in xrange(in_range_begin, in_range_end + 1):
             element = self.element_stack.storage[index]
@@ -123,7 +123,9 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
                 tags[-1][1] = index
         return tags
 
-    def __collect_content_between_tags(self, in_tag_open_index, in_tag_close_index):
+    def __collect_content_between_tags(self,
+                                       in_tag_open_index,
+                                       in_tag_close_index):
         coordinates = [-1, -1]
         content = ''
         for index in xrange(in_tag_open_index + 1, in_tag_close_index):
@@ -137,15 +139,21 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
 
     # annotating the content within the tag region with <ana>'s
     # and splitting compounds into multiple <w>'s
-    def tag_word(self, in_word, in_content_coordinates, in_tag_indices, in_parse):
+    def tag_word(self,
+                 in_word,
+                 in_content_coordinates,
+                 in_tag_indices,
+                 in_parse):
         content_tag_index = in_tag_indices[0] + 1
-        while content_tag_index != len(self.element_stack.storage) \
-              and self.element_stack.storage[content_tag_index][0] != 'content':
+        while content_tag_index != len(self.element_stack.storage) and \
+            self.element_stack.storage[content_tag_index][0] != 'content':
               content_tag_index += 1
         if content_tag_index == len(self.element_stack.storage):
             raise RuntimeError('Could not find content element in the stack!')
 
-        self.__markup_word_parses(in_tag_indices, in_content_coordinates, in_parse)
+        self.__markup_word_parses(in_tag_indices,
+                                  in_content_coordinates,
+                                  in_parse)
 
     def process_features(self, in_features):
         features_filtered = []
@@ -154,17 +162,22 @@ class MorphoTaggerHandler(xml.sax.handler.ContentHandler):
                 features_filtered.append('%s="%s"' % (feature, value))
         return ' '.join(features_filtered)
 
-    def __markup_word_parses(self, in_tag_indices, in_content_coordinates, in_parse):
+    def __markup_word_parses(self,
+                             in_tag_indices,
+                             in_content_coordinates,
+                             in_parse):
         word_open_index, word_close_index = in_tag_indices
         unclosed_w_tag = False
         # processing each subparse from last to first,
-        # as in "Saint-Petersburg-Moscow", we'll have these subparses: (Saint-Petersburg)-(Moscow)
+        # as in "Saint-Petersburg-Moscow",
+        # we'll have these subparses: (Saint-Petersburg)-(Moscow)
         for index in xrange(len(in_parse) - 1, -1, -1):
             parse_coordinates, parse = in_parse[index]
             absolute_begin = in_content_coordinates[0] + parse_coordinates[0]
             absolute_end = in_content_coordinates[0] + parse_coordinates[1]
             # print absolute_begin, absolute_end
-            content_element_index = self.find_content_element_by_coordinate(absolute_begin)
+            content_element_index = \
+                self.find_content_element_by_coordinate(absolute_begin)
 
             # we go from last to first, so we start off each time with </w>
             if unclosed_w_tag:
@@ -230,65 +243,31 @@ def convert(in_paths):
     (inpath, outpath) = in_paths
     out = outpath
     if isinstance(outpath, str):
-        out = codecs.getwriter(config.CONFIG['out_encoding'])(file(outpath, 'wb'), 'xmlcharrefreplace')
-    for key in LEMMERS.keys():
-        if LEMMERS[key]:
-            LEMMERS[key].Reset()
-    retcode = 0
+        out = \
+            codecs.getwriter(config.CONFIG['out_encoding'])(file(outpath, 'wb'),
+                             'xmlcharrefreplace')
+    return_code = 0
     try:
         tagger_handler = MorphoTaggerHandler(out)
         parser = xml.sax.make_parser()
         parser.setContentHandler(tagger_handler)
         parser.parse(inpath)
     except xml.sax.SAXException:
-        retcode = 1
-    return retcode
+        return_code = 1
+    return return_code
 
 
 def initialize_lemmers(in_options):
     print 'Initializing...',
-    global LEMMERS
-
-    wrapper = mystem_wrapper.MystemWrapper()
-    # first parameter options.lemmer deleted
-    LEMMERS = {
-        "ru": lemmer.Lemmer(["ru"],
-                            in_options.semdict,
-                            in_options.addpath,
-                            in_options.delpath,
-                            full=in_options.full,
-                            reallyAdd=in_options.addFixList,
-                            mystem=wrapper),
-        "en": lemmer.Lemmer(["en"], full=in_options.full, mystem=wrapper),
-        "de": lemmer.Lemmer(["de"], full=in_options.full, mystem=wrapper),
-        "uk": lemmer.Lemmer(["uk"], full=in_options.full, mystem=wrapper),
-        "be": lemmer.Lemmer(["be"], full=in_options.full, mystem=wrapper),
-        "chu": lemmer.Lemmer(["chu"], full=in_options.full, mystem=wrapper),
-        "fr": lemmer.Lemmer(["fr"], full=in_options.full, mystem=wrapper),
-        "es": lemmer.Lemmer(["es"], full=in_options.full, mystem=wrapper),
-        "it": lemmer.Lemmer(["it"], full=in_options.full, mystem=wrapper),
-        "pt": lemmer.Lemmer(["pt"], full=in_options.full, mystem=wrapper),
-        "ro": lemmer.Lemmer(["ro"], full=in_options.full, mystem=wrapper),
-        "cs": lemmer.Lemmer(["cs"], full=in_options.full, mystem=wrapper),
-        "bg": lemmer.Lemmer(["bg"], full=in_options.full, mystem=wrapper),
-        "dummy": lemmer.DummyLemmer(),
-        "": lemmer.Lemmer([], full=in_options.full, mystem=wrapper),
-    }
-    LEMMERS["rus"] = LEMMERS["ru"]
-    LEMMERS["eng"] = LEMMERS["en"]
-    LEMMERS["ger"] = LEMMERS["de"]
-    LEMMERS["ukr"] = LEMMERS["uk"]
-    LEMMERS["bel"] = LEMMERS["be"]
-
-    if in_options.lang and in_options.lang in LEMMERS:
+    if in_options.lang \
+        and in_options.lang in lemmer_holder.LemmerHolder.LANGUAGE_MAPPING:
         global DEFAULT_LANG
         DEFAULT_LANG = in_options.lang
+
+    global LEMMER_HOLDER
+    LEMMER_HOLDER = lemmer_holder.LemmerHolder(in_options, DEFAULT_LANG)
+
     print 'done!'
-
-
-def get_lemmer(in_language):
-    lemmer = LEMMERS.get(in_language, LEMMERS['dummy'])
-    return lemmer
 
 
 def configure_option_parser(in_usage_string=''):
@@ -355,10 +334,12 @@ def main():
 
     if os.path.isdir(inpath):
         fs_walk.process_directory(inpath, outpath, task_list.add_task)
-        worker_pool = multiprocessing.Pool(processes=config.CONFIG['jobs_number'],
-                                           initializer=initialize_lemmers,
-                                           initargs=[options])
-        return_codes = task_list.execute_tasks(convert_and_log, in_pool=worker_pool)
+        worker_pool =\
+            multiprocessing.Pool(processes=config.CONFIG['jobs_number'],
+                                 initializer=initialize_lemmers,
+                                 initargs=[options])
+        return_codes =\
+            task_list.execute_tasks(convert_and_log, in_pool=worker_pool)
         retcode = sum([1 if code is not None else 0 for code in return_codes])
     else:
         initialize_lemmers(options)

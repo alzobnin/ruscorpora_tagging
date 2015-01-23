@@ -11,17 +11,21 @@ import tokenizer
 def convert(paths):
     (inpath, outpath) = paths
     encoding = config.CONFIG['out_encoding']
-    intermediate_buffer = codecs.getwriter(encoding)(StringIO.StringIO(), 'xmlcharrefreplace')
-    outfile = codecs.getwriter(encoding)(file(outpath, 'wb'), 'xmlcharrefreplace')
+    intermediate_buffer = codecs.getwriter(encoding)(StringIO.StringIO(),
+                                                     'xmlcharrefreplace')
+    outfile = codecs.getwriter(encoding)(file(outpath, 'wb'),
+                                         'xmlcharrefreplace')
 
     retcode = None
     try:
         tokenization_retcode = tokenizer.convert((inpath, intermediate_buffer))
-        print '"%s" tokenized - %s' % (inpath, 'OK' if tokenization_retcode == 0 else 'FAIL')
+        print '"%s" tokenized - %s' %\
+              (inpath, 'OK' if tokenization_retcode == 0 else 'FAIL')
 
         intermediate_buffer.seek(0)
         tagging_retcode = morpho_tagger.convert((intermediate_buffer, outfile))
-        print '"%s" morpho tagged - %s' % (inpath, 'OK' if tagging_retcode == 0 else 'FAIL')
+        print '"%s" morpho tagged - %s' %\
+              (inpath, 'OK' if tagging_retcode == 0 else 'FAIL')
     except Exception as e:
         print e.message
         retcode = inpath
@@ -29,8 +33,9 @@ def convert(paths):
 
 
 def main():
-
-    usage_string = 'Usage: annotate_texts.py --input <input path> --output <output path> [options]'
+    usage_string =\
+        'Usage: annotate_texts.py ' +\
+        '--input <input path> --output <output path> [options]'
     parser = morpho_tagger.configure_option_parser(usage_string)
     (options, args) = parser.parse_args()
 
@@ -45,9 +50,10 @@ def main():
     retcode = 0
     if os.path.isdir(inpath):
         fs_walk.process_directory(inpath, outpath, task_list.add_task)
-        worker_pool = multiprocessing.Pool(processes=config.CONFIG['jobs_number'],
-                                           initializer=morpho_tagger.initialize_lemmers,
-                                           initargs=[options])
+        worker_pool =\
+            multiprocessing.Pool(processes=config.CONFIG['jobs_number'],
+                                 initializer=morpho_tagger.initialize_lemmers,
+                                 initargs=[options])
         return_codes = task_list.execute_tasks(convert, worker_pool)
         retcode = sum([1 if code is not None else 0 for code in return_codes])
     else:

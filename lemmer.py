@@ -7,14 +7,12 @@ import sys
 import re
 import codecs
 from collections import deque
-import json
 import itertools
 
 import semantics
 import mystem_wrapper
 import token_transformation
 
-from modules import common
 
 to_encoding = codecs.getencoder("utf-8")
 from_encoding = codecs.getdecoder("utf-8")
@@ -452,7 +450,7 @@ class Lemmer:
         return newTable
 
     def prefixCount(word, prefix):
-        if words.startswith(prefix):
+        if word.startswith(prefix):
             return 1 + prefixCount(word[len(prefix):], prefix)
         return 0
 

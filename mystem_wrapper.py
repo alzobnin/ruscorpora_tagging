@@ -1,5 +1,4 @@
-import StringIO
-from subprocess import Popen, PIPE, STDOUT
+from subprocess import Popen, PIPE
 import os
 import sys
 import json
@@ -16,16 +15,18 @@ def print_parse(in_parsed_tokens_list):
 
 
 class MystemWrapper(object):
-    MYSTEM_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), MYSTEM_BINARY_NAME)
+    MYSTEM_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                               MYSTEM_BINARY_NAME)
 
-    def __init__(self, in_add_cfg=None):
+    def __init__(self, language, in_add_cfg=None):
         self.options = [
             '--format=json', # plaintext at input, json at output
             '-i', # print grammar
             '-d', # use disamb
             '-c', # print every single input symbol at output
             '-g', # glue FlexGrams for the same YandexLemmas
-            '--eng-gr' # grammar tags in English
+            '--eng-gr', # grammar tags in English
+            '--language=%s' % language
         ]
         if in_add_cfg:
             self.options += [
