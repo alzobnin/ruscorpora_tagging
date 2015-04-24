@@ -10,8 +10,20 @@ import lemmer_holder
 
 from modules import common, element_stack, fs_walk, config, task_list
 
-DEFAULT_LANG = 'ru'
-LANGS_WITHOUT_LEMMER = {"hr", "hsb", "la", "lt", "lv", "mk", "nl", "sk", "sl", "sr", "sv"}
+DEFAULT_LANG = "ru"
+LANGS_WITHOUT_LEMMER = {
+    "hr",
+    "hsb",
+    "la",
+    "lt",
+    "lv",
+    "mk",
+    "nl",
+    "sk",
+    "sl",
+    "sr",
+    "sv"
+}
 MANUAL_TAGGING_LANGS = {"pl"}
 LEMMER_HOLDER = None
 

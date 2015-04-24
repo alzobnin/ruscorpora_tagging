@@ -60,5 +60,8 @@ class LemmerHolder(object):
         mystem_language_id = LemmerHolder.LANGUAGE_MAPPING[in_language]
         wrapper = mystem_wrapper.MystemWrapper(language=mystem_language_id)
         return lemmer.Lemmer([in_language],
+                             dictionaryPath=self.options.semdict,
+                             addPath=self.options.addpath,
+                             delPath=self.options.delpath,
                              full=self.options.full,
                              mystem=wrapper)

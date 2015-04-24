@@ -107,7 +107,7 @@ class Lemmer:
                      .replace("=", ",") \
                      .rstrip() \
                      .split("@")
-                form = x[0].lstrip().rstrip()
+                form = x[0].strip()
                 if form not in self.Add:
                     self.Add[form] = []
                 for el in x[1:]:
@@ -191,8 +191,8 @@ class Lemmer:
                 # if it's not explicitly present in the input and doesn't have a parse as well,
                 # it's treated as garbage
                 if detransformed_token_text in in_tokens \
-                    or self.__has_meaningful_parse(processed_parse) \
-                    or re.findall('\w+', detransformed_token_text, re.UNICODE):
+                        or self.__has_meaningful_parse(processed_parse) \
+                        or re.findall('\w+', detransformed_token_text, re.UNICODE):
                     result[token_index].append((detransformed_token_region, processed_parse))
             last_position += len(token_text)
         return result
@@ -221,17 +221,16 @@ class Lemmer:
         analyses = in_parsed_token.get('analysis', None)
         if not len(word):
             result = {(0,1): [('?', [('NONLEX', '', '')], 'ru', 'nodisamb')]}
-        elif not analyses:
-            result = {(0,1): [(word, [('NONLEX', '', '')], 'ru', 'nodisamb')]}
         elif NUMBER_RE.match(word):
             result = {(0,1): [(word, [('NUM,ciph', '', '')], 'ru', 'disamb')]}
+        elif not analyses:
+            result = {(0,1): [(word, [('NONLEX', '', '')], 'ru', 'nodisamb')]}
         else:
             lword = word.lower()
             # the table is a dict: (start, end) -> [(lemma, [(gramm, sem, semall)], language)]
             table = {}
             # check if this word has its own special morphological analysis
             temp = self.Add.get(lword, None)
-
             if temp != None:
                 if self.reallyAdd:
                     for el in temp:
