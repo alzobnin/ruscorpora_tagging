@@ -220,11 +220,9 @@ class Lemmer:
         word = in_parsed_token['text'].strip()
         analyses = in_parsed_token.get('analysis', None)
         if not len(word):
-            result = {(0,1): [('?', [('NONLEX', '', '')], 'ru', 'nodisamb')]}
+            result = {(0, 1): [('?', [('NONLEX', '', '')], 'ru', 'nodisamb')]}
         elif NUMBER_RE.match(word):
-            result = {(0,1): [(word, [('NUM,ciph', '', '')], 'ru', 'disamb')]}
-        elif not analyses:
-            result = {(0,1): [(word, [('NONLEX', '', '')], 'ru', 'nodisamb')]}
+            result = {(0, 1): [(word, [('NUM,ciph', '', '')], 'ru', 'disamb')]}
         else:
             lword = word.lower()
             # the table is a dict: (start, end) -> [(lemma, [(gramm, sem, semall)], language)]
