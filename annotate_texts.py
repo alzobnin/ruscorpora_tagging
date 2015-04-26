@@ -2,6 +2,8 @@ import StringIO
 import codecs
 import os
 import multiprocessing
+import traceback
+import sys
 
 from modules import fs_walk, config, task_list
 import morpho_tagger
@@ -27,7 +29,7 @@ def convert(paths):
         print '"%s" morpho tagged - %s' %\
               (inpath, 'OK' if tagging_retcode == 0 else 'FAIL')
     except Exception as e:
-        print e.message
+        traceback.print_exc(file=sys.stderr)
         retcode = inpath
     return retcode
 

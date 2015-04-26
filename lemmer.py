@@ -218,7 +218,7 @@ class Lemmer:
 
         fixlist_applied = False
         word = in_parsed_token['text'].strip()
-        analyses = in_parsed_token.get('analysis', None)
+        analyses = in_parsed_token.get('analysis', [])
         if not len(word):
             result = {(0, 1): [('?', [('NONLEX', '', '')], 'ru', 'nodisamb')]}
         elif NUMBER_RE.match(word):
