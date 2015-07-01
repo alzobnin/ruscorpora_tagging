@@ -1,0 +1,255 @@
+// Copied from arcadia/search/idl/meta.proto
+
+package NMetaProtocol;
+
+option optimize_for = SPEED;
+
+// Вспомогательная структура для хранения пар ключ-значение
+message TPairBytesBytes {
+    optional bytes Key = 1;
+    optional bytes Value = 2;
+}
+
+// Вспомогательная структура для хранения пар ключ-значение
+message TPairBytesInt64 {
+    optional bytes Key = 1;
+    optional int64 Value = 2;
+}
+
+// Маппинг имен бинарных факторов в числовые идентификаторы и их значения по умолчанию
+message TFactorMapping {
+    required bytes Key = 1;
+    required int32 Value = 2;
+    optional float FactorValue = 3;
+}
+
+// Вспомогательная структура для хранения пар ключ-значение
+message TPairIntFloat {
+    required int32 Key = 1;
+    required float Value = 2;
+}
+
+// Структура, соответствующая ответу на запрос.
+message TReport {
+    // структура с некоторой общей информацией
+    optional THead Head = 1;
+    // данные, полезные при отладке для того, чтобы понять, кто отвечал, а кто нет
+    optional TDebugInfo DebugInfo = 2;
+    // данные, необходимые для динамической балансировки нагрузки
+    optional TBalancingInfo BalancingInfo = 3;
+    // специальная структура для протаскивания наверх информации вида ключ-значение (чтобы не заводить для каждой такой пары специальное поле)
+    // внимание! Содержимое структуры кэшируется выборочно, по умолчанию не кэшируется. См. TPersistentSearchProps.
+    repeated TPairBytesBytes SearcherProp = 4;
+    // статус ответа
+    optional TErrorInfo ErrorInfo = 5;
+    /* "общее" количество найденных документов (на самом деле общее количество найденных документов TotalDocCount * head.DocCountMultiplier).
+       TotalDocCount --- это массив длины NUM_PRIORITIES, каждый элемент которого --- это количество документов с определенной точностью
+       совпадения (TotalDocCount[0] --- по кворому, TotalDocCount[1] --- все слова, TotalDocCount[2] --- точное совпадение)
+    */
+    repeated uint64 TotalDocCount = 6;
+    // массив значений задаваемых через параметры запроса функций
+    repeated TPairBytesInt64 FormField = 7;
+    // собственно информация о группировках. В ответе может быть несколько группировок при задании нескольких группировочных атрибутов
+    repeated TGrouping Grouping = 8;
+
+    repeated string EventLog = 9;
+    // При использовании сжатия TReport должен содержать только следующие два поля. Compression - алгоритм сжатия. CompressedReport - сжатый TReport.
+    optional string Compression = 10;
+    optional bytes CompressedReport = 11;
+
+    repeated TSearchProperties SearchProperties = 12;
+}
+
+// Структура с некоторой общей информацией.
+message THead {
+    // версия протокола(?) (в настоящее время не используется, в процессе разработки очень давно не менялась)
+    optional int32 Version = 1;
+    // по сути имя машины, которая генерит ответ на запрос (вроде бы нигде не используется)
+    optional bytes SegmentId = 3;
+    // множитель количества документов (используется для получения общего количества найденных документов)
+    //optional float DocCountMultiplier = 4; //obsolet
+    // номер поколения индекса базы. Используется для определения того, что на базовом поменялась база (это ведет к инвалидации кэша и т.д.). При передаче от int к mmeta этот параметр не используется
+    optional uint32 IndexGeneration = 9;
+    // статистика того, сколько раз в сумме в индексе встретилось каждое слово из запроса (на среднем метапоиске вычисляется как сумма значений, полученных от базовых)
+    // optional bytes OldWordStatVariableIsUnusedNow = 11;
+    // маппинг имен факторов в идентификаторы
+    repeated TFactorMapping FactorMapping = 12;
+    // разделяемая между документами информация о выполненном запросе, для восстановления запроса к ответившему сервису [+нижележащим сервисам]
+    optional bytes SearchInfo = 13;
+}
+
+message TEventLogFrame {
+    // идентификатор запроса (cgi-параметр запроса ruid=)
+    optional string Ruid = 1;
+    // сжатый gzip-ом текст eventlog frame-а
+    optional bytes CompressedFrame = 2;
+}
+
+// Структура с некоторой "отдалочнай" информацией, необходимой для того, чтобы понять, кто отвечал, а кто нет.
+message TDebugInfo {
+    // общее количество ответивших базовых
+    optional uint32 BaseSearchCount = 1;
+    // общее количество неответивших источников (если запрос пришел на mmeta, а не ответил int, то будет считаться, что все базовые этого int-а не ответили)
+    optional uint64 BaseSearchNotRespondCount = 2;
+    /* статус полноты ответа. Базовый поиск может возвратить неполный ответ, если был достигнут timeout на время поиска, но при этом что-то
+       мы уже нашли. В этом случае мы возвращаем все, что нашли, но AnswerIsComplete ставится в false. Средний возвращает false, если хотя
+       бы один из клиентов не ответил, либо выдал неполный ответ (при наличии опции ReAskIncompleteSources в конфиге)
+    */
+    optional bool AnswerIsComplete = 3;
+    // список машин, которые не ответили (может быть несколько хостов с одной репликой, если все они не ответили)
+    repeated bytes NotRespondSourceName = 4;
+    // cpu профили участвовавших в обработке запроса нод (базовых/средних), включая машину, на которой генерится ответ. Если запрашивали mmeta-у и результат был взят из кэша, в списке хостов будет только mmeta-а
+    repeated TCPUUsage CPUUsage = 6;
+    repeated string FailedPrimusList = 7;
+
+    // Коды ответов источников для верхнего
+    repeated TSourceAnswerInfo SourceAnswerInfo = 8;
+
+    // сжатый фрейм лога, относящийся к текущему или нижележащим поискам
+    repeated TEventLogFrame EventLogFrame = 9;
+    // информация о конфигурации поискового сервиса, которую нужно залогировать в локальный eventlog
+    repeated TPairBytesBytes ConfigInfo = 10;
+}
+
+// Отчёт от поисковой ноды о потраченном времени
+message TCPUUsage {
+    optional string HostName = 1;
+    optional uint32 CPUSignature = 2;
+
+    optional uint64 WallTimeUs = 3;
+    optional uint64 CPUTimeUs = 4;
+}
+
+// Коды ответов источников для верхнего
+message TSourceAnswerInfo {
+    optional string Descr = 1;
+    optional uint32 Code = 2;
+    optional int32 NotRespondedClientsCount = 3;
+    optional int32 NotGatheredBaseSearchAnswers = 4;
+}
+
+// Дополнительная информация, необходимая для динамической балансировки нагрузки. Часть информации, относящейся к балансировке, передается через Props.
+message TBalancingInfo {
+    // общее время выполнения запроса (с момента создания конекста до начала создания репорта)
+    optional uint64 Elapsed = 1;
+    optional uint64 WaitInQueue = 2;
+    optional uint64 ExecutionTime = 3;
+}
+
+// Статус ответа и описание ошибки, если таковая произошла.
+message TErrorInfo {
+    enum TGotError {
+        YES = 1;
+        NO = 2;
+    };
+
+    // произошла ошибка или нет
+    optional TGotError GotError = 1;
+    // текст ошибки
+    optional bytes Text = 2;
+    // код ошибки
+    optional int64 Code = 3;
+}
+
+/// Структура, содержащая результаты по одному группировочному атрибуту:
+message TGrouping {
+    enum TIsFlat {
+        YES = 1;
+        NO = 2;
+    };
+
+    //  плоская ли группировка. Если группировка плоская, то мы на самом деле отдаем не группы (Group), а документы --- поле Document у Group (используестя при отдаче сниппетов, еще документы с сайта и т.д.). В случае плоской группироваки все поля TGroup, кроме Document, не заполняются.
+    optional TIsFlat IsFlat = 1;
+    // первая половина группировочного атрибута
+    optional bytes Attr = 2;
+    // вторая половина группировочного атрибута. Принимает значения 0, 1 и 2. 0 --- используется для плоской группировки (атрибут при этом должен быть пустым), 1 и 2 --- для группировки по атрибуту
+    optional int64 Mode = 3;
+    // общее количество групп (это тоже массив, как и TotalDocCount, с такими же по смыслу полями)
+    repeated uint64 NumGroups = 4;
+
+    // общее количество документов, относящихся к данной групировке
+    repeated uint64 NumDocs = 6;
+
+    // массив найденных групп. Каждой группе может соответствовать несколько документов
+    repeated TGroup Group = 5;
+}
+
+// Структура, соответствующая группе документов. Содержит некоторую осредненную информацию о документах, попашвих в одну группу. При поиске на базовом документы объединяются по группировочному атрибуту (для web-поиска по сайту).
+message TGroup {
+    // имя категории документа при группировке по конкретному группировочному атрибуту (наприммер, для "d" --- имя сайта). Документы, имеющие одно и то же значаение CategoryName попадают в одну группу
+    optional bytes CategoryName = 1;
+    // количество документов в группе
+    repeated uint32 RelevStat = 2;
+    // значение релевантности группы. Вычисляется из релевантностей документов, метод зависит от параметров запроса (сумма релевантностей документов, максимальная релевантность, общее кол-во документов и т.д.). Группы должны быть отсортированы по релевентности (в прямом или обратном порядке в зависимости от параметров запроса)
+    optional int64 Relevance = 3;
+    // приоритет группы (?), в настоящее время для всех групп выставляется значение 4
+    optional int32 Priority = 4;
+    // степень точности совпадения запроса и слов запроса в документе (сейчас есть 3 варианта: по кворуму, все слова, точное совпадение)
+    optional int64 InternalPriority = 5;
+    // список документов, соответствующих категории CategoryName. Количество элементов определяется параметрами запроса
+    repeated TDocument Document = 6;
+    // group.NumDocs
+    optional uint32 NumDocs = 7;
+}
+
+// Структура, соответствующая документу.
+message TDocument {
+    // значение релевантности документа. Документы в группе должны быть осортированы по релевантности
+    optional uint64 Relevance = 1;
+    // приоритет документа (?), в настоящее время для всех документво выставляется значение 4
+    optional uint32 Priority = 2;
+    // степень точности совпадения запроса и слов запроса в документе (по кворуму, все слова, точное совпадение)
+    optional uint32 InternalPriority = 3;
+    // атрибуты документа, возвращаемые базовым поиском на первой стадии поиска
+    repeated TPairBytesBytes FirstStageAttribute = 4;
+    // массив факторов, определяющих релевантность документа. Используется в основном при отладке. То, какие факторы выдаются, определятся параметрами запроса. В обычных запросах этот массив пустой.
+    repeated TPairIntFloat BinFactor = 9;
+    // информация, используемая при последующем запросе на сниппеты (заполняется только при двухстадийном поиске)
+    optional bytes PassageBreaks = 5;
+    // значение поколения индекса для документа. Необходимо хранить именно в документе, поскольку база на разных базовых поисках обновляется неодновременно и в ответе могут присутствовать документы с различным поколением индекса.
+    optional uint32 IndexGeneration = 6;
+    optional uint32 SourceTimestamp = 11;
+    // идентификатор документа. Формируется как <id источника>-<id документа, полученного с данного источника> (например, 16-15-10347296)
+    optional bytes DocId = 7;
+    // информация о документе, получаемая из архива. При двухстадийном поиске это поле заполняется лишь при выполнении запроса на сниппеты
+    optional TArchiveInfo ArchiveInfo = 8;
+    //all doc factors, compressed by library/codecs/float_huffman.h
+    optional bytes DocRankingFactors = 10;
+    // doc.ServerDescr
+    optional bytes ServerDescr = 12;
+    // информация о запросах, выполненых поисковыми серверами в процессе формирования информации о документе (requests tree). Нужна для куки релевантности (отладка релевантности)
+    optional bytes SearchInfo = 13;
+}
+
+// Структура, содержащая информацию о документе, которая берется из архива.
+message TArchiveInfo {
+    // заголовок документа
+    optional bytes Title = 1;
+    // аннотация (?).
+    optional bytes Headline = 2;
+    // начение поколения индекса для документа. Получается дубликация IndexGeneration, поскольку мы можем отдельно запросить синппеты, отдельно группы и документы (и в обоих случаях нам нужно знать значение поколения индекса).
+    optional uint32 IndexGeneration = 3;
+    optional uint32 SourceTimestamp = 12;
+    // сниппеты (из содержимого документа).
+    repeated bytes Passage = 4;
+    // сниппеты (из текста ссылок, указывающих на данный документ).
+    repeated bytes PassageAttr = 5;
+    // атрибуты документа, вроде языка, MimeType и др.
+    repeated TPairBytesBytes GtaRelatedAttribute = 6;
+    // атрибуты документа, вроде языка, MimeType и др.
+    repeated TPairIntFloat FloatRelatedAttribute = 11;
+    // url документа
+    optional bytes Url = 7;
+    // размер документа в архиве
+    optional int32 Size = 8;
+    // кодировка документа
+    optional bytes Charset = 9;
+    // время последней модификации документа
+    optional int64 Mtime = 10;
+}
+
+message TSearchProperties {
+    required uint32 Id = 1;
+    optional string Name = 2;
+    repeated TPairBytesBytes Properties = 3;
+}
