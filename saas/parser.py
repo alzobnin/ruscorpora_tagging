@@ -101,10 +101,10 @@ def dnf(tree):
     if operator == "&":
         operator = "|"
         sub_operands = list((child_operands(sub_tree) for sub_tree in operands))
-        print list(sub_operands)
+        #print list(sub_operands)
         operands = []
         for item in itertools.product(*sub_operands):
-            print list(item)
+            #print list(item)
             operands.append(('&', list(item)))
     return flat((operator, operands))
 

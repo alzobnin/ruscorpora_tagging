@@ -23,11 +23,10 @@ def total_stat(kps=KPS):
         ("relev", "attr_limit=1000000"),
         ("text", 'url:"*"'),
         ("g", "1.s_url.1.0"),
-        ("ms", "proto"),
         #("info", "doccount"),
     ))
     url = SAAS_HOST + params
-    print url
+    #print url
     response = urllib2.urlopen(url)
     obj = cjson.decode(response.read())
     if not obj["response"]["results"]:
@@ -117,7 +116,7 @@ def process(response, query_len, serp_params):
     response_results = obj["response"]["results"][0]
     results = []
     stat = {"Docs": 0, "Hits": 0}
-    total_docs = 123 #total_stat()
+    total_docs = total_stat()
     stat["TotalDocs"] = total_docs
     if not obj["response"]["results"]:
         return results, stat
@@ -165,13 +164,12 @@ def search(query, wfile):
         ("qi", "rty_hits_count_full"),
         ("fsgta", "__HitsInfo"),
         ("fsgta", "s_url"),
-        ("ms", "proto"),
         ("g", "1.s_url.%d.10.....s_subindex.1" % (max_doc + 1)),
         ("how", "p_sort"),
         ("asc", "1"),
     ))
     url = SAAS_HOST + params
-    print url
+    #print url
     response = urllib2.urlopen(url)
     results, stat = process(response.read(), query_len, serp_params)
     rendering.render_xml(results, stat, serp_params, wfile)
@@ -182,7 +180,6 @@ def doc_info(query, wfile):
     params = urllib.urlencode((
         ("text", 'p_url:"%s"' % docid),
         ("kps", KPS),
-        ("ms", "proto"),
         ("numdoc", "1"),
     ))
     url = SAAS_HOST + params
@@ -203,12 +200,12 @@ def word_info(query, wfile):
     params = urllib.urlencode((
         ("text", 'url:"%s"' % url),
         ("kps", KPS),
-        ("ms", "proto"),
         ("numdoc", "1"),
     ))
     url = SAAS_HOST + params
     response = urllib2.urlopen(url)
     obj = cjson.decode(response.read())
+    print >>sys.stderr, obj
     if not obj["response"]["results"]:
         return
     doc = extract_doc(obj["response"]["results"][0]["groups"][0]["documents"][0]["properties"]["p_doc_part"])
@@ -221,7 +218,6 @@ def all_urls(kps):
     params = urllib.urlencode((
         ("text", 'url:"*"'),
         ("kps", kps),
-        ("ms", "proto"),
         ("numdoc", max_int),
     ))
     url = SAAS_HOST + params
@@ -298,7 +294,7 @@ def parse_lexgramm_cgi(query):
             full_query += " /(%s %s) " % (min_dist, max_dist)
     if nodes_count > 1:
         query_len = nodes_count
-    print full_query
+    #print full_query
     return full_query, query_len
 
 

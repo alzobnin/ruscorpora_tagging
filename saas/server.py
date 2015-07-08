@@ -23,6 +23,7 @@ from_win1251 = codecs.getdecoder("windows-1251")
 
 class ServerHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     def do_GET(self):
+        start = time.time()
         out = codecs.getwriter("utf-8")(self.wfile, 'xmlcharrefreplace')
 
         self.send_response(200, "OK")
@@ -33,9 +34,10 @@ class ServerHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
         query = urlparse.urlparse(self.path).query
         params = urlparse.parse_qs(query)
-        print params
 
         search.search(params, self.wfile)
+        end = time.time()
+        print >>sys.stderr, "Elapsed:", end - start
 
 
 def main():
