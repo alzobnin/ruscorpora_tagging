@@ -4,12 +4,11 @@ import sys
 import urllib
 import urllib2
 import cjson
-from meta_pb2 import TReport
 import rendering
 import parser
 
-SAAS_HOST = "http://saas-searchproxy-prestable.yandex.net:17000/ruscorpora?"
-KPS = "42"
+SAAS_HOST = "https://saas-searchproxy-outgone.yandex.net/yandsearch?service=ruscorpora&format=json&"
+KPS = "2"
 
 DEFAULT_SERP_PARAMS = {
     "p": 0,
@@ -30,12 +29,11 @@ def total_stat(kps=KPS):
     url = SAAS_HOST + params
     print url
     response = urllib2.urlopen(url)
-    obj = TReport()
-    obj.ParseFromString(response.read())
-    if not obj.Grouping or not obj.Grouping[0].NumGroups:
+    obj = cjson.decode(response.read())
+    if not obj["response"]["results"]:
         total_docs = 0
     else:
-        total_docs = obj.Grouping[0].NumGroups[0]
+        total_docs = int(obj["response"]["results"][0]["found"]["all"])
     return total_docs
 
 
@@ -44,20 +42,15 @@ def extract_doc(blob):
 
 
 def extract_url(group):
-    for doc in group.Document:
-        for attr in doc.ArchiveInfo.GtaRelatedAttribute:
-            if attr.Key == "p_url":
-                return attr.Value
+    for doc in group["documents"]:
+        return doc["properties"]["p_url"]
     return ""
 
 
 def process_doc(doc):
-    arch_info = doc.ArchiveInfo
-    for attr in arch_info.GtaRelatedAttribute:
-        if attr.Key == "p_doc_part":
-            doc = extract_doc(attr.Value)
-        elif attr.Key == "__HitsInfo":
-            hits_info = cjson.decode(attr.Value)
+    props = doc["properties"]
+    doc_part = extract_doc(props["p_doc_part"])
+    hits_info = cjson.decode(props["__HitsInfo"][0])
     hits = dict()
     for item in hits_info:
         s = int(item["sent"]) - 1
@@ -65,17 +58,17 @@ def process_doc(doc):
         if s not in hits:
             hits[s] = set()
         hits[s].add(w)
-    return {"Hits": hits, "Doc": doc, "Url": arch_info.Url}
+    return {"Hits": hits, "Doc": doc_part, "Url": doc["url"]}
 
 
 def process_attrs(group):
     attrs = {}
-    for doc in group.Document:
-        arch_info = doc.ArchiveInfo
-        for attr in arch_info.GtaRelatedAttribute:
-            if attr.Key.startswith("s_"):
-                key = attr.Key.decode("utf-8")[2:]
-                value = attr.Value.decode("utf-8")
+    for doc in group["documents"]:
+        for key, value in doc["properties"].items():
+            if key.startswith("s_"):
+                key = key[2:]
+                if type(value) is list:
+                    value = value[0]
                 attrs[key] = attrs.get(key, []) + [value]
         break
     return attrs
@@ -113,24 +106,24 @@ def process_snippets(result, spd, radius):
 def process_group(group, serp_params):
     snippets = []
     url = ""
-    for doc in group.Document:
+    for doc in group["documents"]:
         result = process_doc(doc)
         snippets += process_snippets(result, serp_params["spd"] - len(snippets), serp_params["radius"])
     return snippets
 
 
 def process(response, query_len, serp_params):
-    obj = TReport()
-    obj.ParseFromString(response)
+    obj = cjson.decode(response)
+    response_results = obj["response"]["results"][0]
     results = []
     stat = {"Docs": 0, "Hits": 0}
-    total_docs = total_stat()
+    total_docs = 123 #total_stat()
     stat["TotalDocs"] = total_docs
-    if not obj.Grouping:
+    if not obj["response"]["results"]:
         return results, stat
     min_doc = serp_params["p"] * serp_params["dpp"]
     max_doc = min_doc + serp_params["dpp"] - 1
-    for i, group in enumerate(obj.Grouping[0].Group):
+    for i, group in enumerate(response_results["groups"]):
         if not (min_doc <= i <= max_doc): continue
         #if len(results) >= serp_params["dpp"]:
         #    break
@@ -138,11 +131,8 @@ def process(response, query_len, serp_params):
         attrs = process_attrs(group)
         url = extract_url(group)
         results.append({"Attrs": attrs, "Snippets": snippets, "Url": url})
-    stat["Docs"] = int(obj.Grouping[0].NumGroups[0])
-    for prop in obj.SearcherProp:
-        if prop.Key == "rty_hits_count_full":
-            stat["Hits"] = int(prop.Value) / query_len
-            break
+    stat["Docs"] = int(response_results["found"]["all"])
+    stat["Hits"] = int(obj["response"]["searcher_properties"]["rty_hits_count_full"]) / query_len
     return results, stat
 
 
@@ -181,6 +171,7 @@ def search(query, wfile):
         ("asc", "1"),
     ))
     url = SAAS_HOST + params
+    print url
     response = urllib2.urlopen(url)
     results, stat = process(response.read(), query_len, serp_params)
     rendering.render_xml(results, stat, serp_params, wfile)
@@ -196,11 +187,10 @@ def doc_info(query, wfile):
     ))
     url = SAAS_HOST + params
     response = urllib2.urlopen(url)
-    obj = TReport()
-    obj.ParseFromString(response.read())
-    if not obj.Grouping or not obj.Grouping[0].Group:
+    obj = cjson.decode(response.read())
+    if not obj["response"]["results"]:
         return
-    attrs = process_attrs(obj.Grouping[0].Group[0])
+    attrs = process_attrs(obj["response"]["results"][0]["groups"][0])
     results = [{"Attrs": attrs, "Snippets": [], "Url": docid}]
     stat = {"Docs": 1, "Hits": 0}
     rendering.render_xml(results, stat, DEFAULT_SERP_PARAMS, wfile, query_type="document-info", search_type="document-info")
@@ -218,12 +208,10 @@ def word_info(query, wfile):
     ))
     url = SAAS_HOST + params
     response = urllib2.urlopen(url)
-    obj = TReport()
-    obj.ParseFromString(response.read())
-    arch_info = obj.Grouping[0].Group[0].Document[0].ArchiveInfo
-    for attr in arch_info.GtaRelatedAttribute:
-        if attr.Key == "p_doc_part":
-            doc = cjson.decode(zlib.decompress(base64.b64decode(attr.Value)))
+    obj = cjson.decode(response.read())
+    if not obj["response"]["results"]:
+        return
+    doc = extract_doc(obj["response"]["results"][0]["groups"][0]["documents"][0]["properties"]["p_doc_part"])
     result = doc["Sents"][sent]["Words"][word]
     rendering.render_word_info_xml(result, wfile)
 
@@ -238,14 +226,12 @@ def all_urls(kps):
     ))
     url = SAAS_HOST + params
     response = urllib2.urlopen(url)
-    obj = TReport()
-    obj.ParseFromString(response.read())
+    obj = cjson.decode(response.read())
     result = []
-    for grouping in obj.Grouping:
-        for group in grouping.Group:
-            for doc in group.Document:
-                arch_info = doc.ArchiveInfo
-                result.append(arch_info.Url)
+    for result in obj["response"]["results"]:
+        for group in result["groups"]:
+            for doc in group["documents"]:
+                result.append(doc["url"])
     return result
 
 

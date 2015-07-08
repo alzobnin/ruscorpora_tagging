@@ -7,6 +7,18 @@ import BaseHTTPServer
 import urlparse
 import search
 
+
+# Workaround for using IPv4
+import socket
+origGetAddrInfo = socket.getaddrinfo
+
+def getAddrInfoWrapper(host, port, family=0, socktype=0, proto=0, flags=0):
+        return origGetAddrInfo(host, port, socket.AF_INET, socktype, proto, flags)
+
+# replace the original socket.getaddrinfo by our version
+socket.getaddrinfo = getAddrInfoWrapper
+
+
 from_win1251 = codecs.getdecoder("windows-1251")
 
 class ServerHandler(BaseHTTPServer.BaseHTTPRequestHandler):

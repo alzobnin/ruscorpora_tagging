@@ -14,7 +14,7 @@ import xml2json
 import delete
 from processing import *
 
-KPS = 42
+KPS = 2
 
 
 def produceXML(doc_part):
@@ -83,7 +83,7 @@ def index_requests(inpath, json_message, body_xml, retries=3):
     if retries == 0:
         print >>sys.stderr, inpath, "FAILED"
         return
-    url = "http://saas-indexerproxy-prestable.yandex.net:80/service/2b6087d5f79ee63acbbb64c2ebea3223?timeout=30000"
+    url = "http://saas-indexerproxy.outgone.yandex.net:80/service/2b6087d5f79ee63acbbb64c2ebea3223?timeout=30000"
     files = [("json_message", json_message), ("body_xml", body_xml)]
     try:
         r = requests.post(url, files=files, timeout=30000)
