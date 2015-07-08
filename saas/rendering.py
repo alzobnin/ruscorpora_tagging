@@ -4,12 +4,6 @@ from string import Template
 from xml.sax.saxutils import escape, quoteattr
 
 def render_xml(results, stat, serp_params, wfile, query_type="lexgramm", search_type="all-documents"):
-    """<corp-stat>
-      <words total="229968798"/>
-      <sentences total="19362746"/>
-      <documents total="85996"/>
-    </corp-stat>"""
-
     out = []
     out.append('<body>')
     out.append('<request page="%d">' % serp_params.get("p", 0))

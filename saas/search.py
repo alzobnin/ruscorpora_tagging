@@ -3,7 +3,8 @@ import zlib
 import sys
 import urllib
 import urllib2
-import cjson
+#import cjson
+import json
 import rendering
 import parser
 
@@ -17,6 +18,14 @@ DEFAULT_SERP_PARAMS = {
     "radius": 0,
 }
 
+def read_json(blob):
+    return json.loads(blob)
+    #return cjson.decode(blob)
+
+def read_json_from_url(url):
+    return read_json(urllib2.urlopen(url).read())
+
+
 def total_stat(kps=KPS):
     params = urllib.urlencode((
         ("kps", kps),
@@ -27,8 +36,7 @@ def total_stat(kps=KPS):
     ))
     url = SAAS_HOST + params
     #print url
-    response = urllib2.urlopen(url)
-    obj = cjson.decode(response.read())
+    obj = read_json_from_url(url)
     if not obj["response"]["results"]:
         total_docs = 0
     else:
@@ -37,7 +45,7 @@ def total_stat(kps=KPS):
 
 
 def extract_doc(blob):
-    return cjson.decode(zlib.decompress(base64.b64decode(blob)))
+    return read_json(zlib.decompress(base64.b64decode(blob)))
 
 
 def extract_url(group):
@@ -49,7 +57,7 @@ def extract_url(group):
 def process_doc(doc):
     props = doc["properties"]
     doc_part = extract_doc(props["p_doc_part"])
-    hits_info = cjson.decode(props["__HitsInfo"][0])
+    hits_info = read_json(props["__HitsInfo"][0])
     hits = dict()
     for item in hits_info:
         s = int(item["sent"]) - 1
@@ -68,6 +76,14 @@ def process_attrs(group):
                 key = key[2:]
                 if type(value) is list:
                     value = value[0]
+                try:
+                    value = value.decode("utf-8")
+                except:
+                    print >>sys.stderr, key
+                    for c in value:
+                        print >>sys.stderr, ord(c),
+                    print >>sys.stderr, ""
+                    print >>sys.stderr, value.encode("utf-8")
                 attrs[key] = attrs.get(key, []) + [value]
         break
     return attrs
@@ -111,15 +127,15 @@ def process_group(group, serp_params):
     return snippets
 
 
-def process(response, query_len, serp_params):
-    obj = cjson.decode(response)
-    response_results = obj["response"]["results"][0]
+def process(url, query_len, serp_params):
+    obj = read_json_from_url(url)
     results = []
     stat = {"Docs": 0, "Hits": 0}
     total_docs = total_stat()
     stat["TotalDocs"] = total_docs
-    if not obj["response"]["results"]:
+    if "results" not in obj["response"]:
         return results, stat
+    response_results = obj["response"]["results"][0]
     min_doc = serp_params["p"] * serp_params["dpp"]
     max_doc = min_doc + serp_params["dpp"] - 1
     for i, group in enumerate(response_results["groups"]):
@@ -170,8 +186,7 @@ def search(query, wfile):
     ))
     url = SAAS_HOST + params
     #print url
-    response = urllib2.urlopen(url)
-    results, stat = process(response.read(), query_len, serp_params)
+    results, stat = process(url, query_len, serp_params)
     rendering.render_xml(results, stat, serp_params, wfile)
 
 
@@ -183,8 +198,7 @@ def doc_info(query, wfile):
         ("numdoc", "1"),
     ))
     url = SAAS_HOST + params
-    response = urllib2.urlopen(url)
-    obj = cjson.decode(response.read())
+    obj = read_json_from_url(url)
     if not obj["response"]["results"]:
         return
     attrs = process_attrs(obj["response"]["results"][0]["groups"][0])
@@ -203,9 +217,7 @@ def word_info(query, wfile):
         ("numdoc", "1"),
     ))
     url = SAAS_HOST + params
-    response = urllib2.urlopen(url)
-    obj = cjson.decode(response.read())
-    print >>sys.stderr, obj
+    obj = read_json_from_url(url)
     if not obj["response"]["results"]:
         return
     doc = extract_doc(obj["response"]["results"][0]["groups"][0]["documents"][0]["properties"]["p_doc_part"])
@@ -221,8 +233,9 @@ def all_urls(kps):
         ("numdoc", max_int),
     ))
     url = SAAS_HOST + params
-    response = urllib2.urlopen(url)
-    obj = cjson.decode(response.read())
+    print url
+    obj = read_json_from_url(url)
+    print obj
     result = []
     for result in obj["response"]["results"]:
         for group in result["groups"]:
@@ -317,5 +330,5 @@ def main():
     search(l)
 
 if __name__ == "__main__":
-    total_stat()
-    #main()
+    #total_stat()
+    main()
