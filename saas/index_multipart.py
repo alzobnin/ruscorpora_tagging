@@ -14,7 +14,7 @@ import xml2json
 import delete
 from processing import *
 
-KPS = 2
+KPS = 5
 
 
 def produceXML(doc_part):
@@ -83,10 +83,10 @@ def index_requests(inpath, json_message, body_xml, retries=3):
     if retries == 0:
         print >>sys.stderr, inpath, "FAILED"
         return
-    url = "http://saas-indexerproxy.outgone.yandex.net:80/service/2b6087d5f79ee63acbbb64c2ebea3223?timeout=30000"
+    url = "http://saas-indexerproxy-outgone.yandex.net:80/service/2b6087d5f79ee63acbbb64c2ebea3223?timeout=20000"
     files = [("json_message", json_message), ("body_xml", body_xml)]
     try:
-        r = requests.post(url, files=files, timeout=30000)
+        r = requests.post(url, files=files, timeout=(0.1, 20))
         response = r.text.strip()
         if response:
             print >>sys.stderr, response, "retrying..."
@@ -113,17 +113,19 @@ def process(inpath, kps=KPS):
     for i, doc_part in enumerate(doc["Parts"]):
         json_message = produceJSON(doc, inpath, i, kps)
         body_xml = produceXML(doc_part)
-        #index_requests(inpath, json_message, body_xml)
-        with open(inpath + ".%04d.json" % i, "w") as f:
-            f.write(json_message)
-        with open(inpath + ".%04d.xml" % i, "w") as f:
-            f.write(body_xml)
+        print >>sys.stderr, "Sending", inpath, i
+        index_requests(inpath, json_message, body_xml)
+        print >>sys.stderr, "done"
+        #with open(inpath + ".%04d.json" % i, "w") as f:
+        #    f.write(json_message)
+        #with open(inpath + ".%04d.xml" % i, "w") as f:
+        #    f.write(body_xml)
     print "DONE:", inpath, len(doc["Parts"])
     sys.stdout.flush()
 
 
 def main():
-    process(sys.argv[1])
+    process(sys.argv[1], int(sys.argv[2]))
 
 
 if __name__ == "__main__":

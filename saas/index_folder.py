@@ -38,10 +38,10 @@ def main():
         print 'Usage: python index_folder.py FOLDER [--jobs <jobs number>] [--kps <kps number> (default: 42)]'
         exit(0)
     global KPS
-    KPS = options.kps
+    KPS = int(options.kps)
     if os.path.isdir(args[0]):
         prepare_file_list(args[0], in_handler=lambda path: FILE_LIST.append(path))
-        if options.jobs_number == 1:
+        if int(options.jobs_number) == 1:
             for item in FILE_LIST:
                 process(item)
         else:

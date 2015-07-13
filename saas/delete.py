@@ -3,7 +3,6 @@ import json
 import requests
 import urllib
 import urllib2
-from meta_pb2 import TReport
 
 SAAS_HOST = "http://saas-searchproxy-prestable.yandex.net:17000/ruscorpora?"
 

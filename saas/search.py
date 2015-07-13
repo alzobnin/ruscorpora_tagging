@@ -9,7 +9,7 @@ import rendering
 import parser
 
 SAAS_HOST = "https://saas-searchproxy-outgone.yandex.net/yandsearch?service=ruscorpora&format=json&"
-KPS = "2"
+KPS = "42"
 
 DEFAULT_SERP_PARAMS = {
     "p": 0,
@@ -37,7 +37,7 @@ def total_stat(kps=KPS):
     url = SAAS_HOST + params
     #print url
     obj = read_json_from_url(url)
-    if not obj["response"]["results"]:
+    if "results" not in obj["response"]:
         total_docs = 0
     else:
         total_docs = int(obj["response"]["results"][0]["found"]["all"])
@@ -76,14 +76,7 @@ def process_attrs(group):
                 key = key[2:]
                 if type(value) is list:
                     value = value[0]
-                try:
-                    value = value.decode("utf-8")
-                except:
-                    print >>sys.stderr, key
-                    for c in value:
-                        print >>sys.stderr, ord(c),
-                    print >>sys.stderr, ""
-                    print >>sys.stderr, value.encode("utf-8")
+                    #value = value.decode("utf-8")
                 attrs[key] = attrs.get(key, []) + [value]
         break
     return attrs
@@ -185,7 +178,7 @@ def search(query, wfile):
         ("asc", "1"),
     ))
     url = SAAS_HOST + params
-    #print url
+    print >>sys.stderr, url
     results, stat = process(url, query_len, serp_params)
     rendering.render_xml(results, stat, serp_params, wfile)
 
@@ -199,7 +192,7 @@ def doc_info(query, wfile):
     ))
     url = SAAS_HOST + params
     obj = read_json_from_url(url)
-    if not obj["response"]["results"]:
+    if "results" not in obj["response"]:
         return
     attrs = process_attrs(obj["response"]["results"][0]["groups"][0])
     results = [{"Attrs": attrs, "Snippets": [], "Url": docid}]
@@ -218,7 +211,7 @@ def word_info(query, wfile):
     ))
     url = SAAS_HOST + params
     obj = read_json_from_url(url)
-    if not obj["response"]["results"]:
+    if "results" not in obj["response"]:
         return
     doc = extract_doc(obj["response"]["results"][0]["groups"][0]["documents"][0]["properties"]["p_doc_part"])
     result = doc["Sents"][sent]["Words"][word]
@@ -235,7 +228,6 @@ def all_urls(kps):
     url = SAAS_HOST + params
     print url
     obj = read_json_from_url(url)
-    print obj
     result = []
     for result in obj["response"]["results"]:
         for group in result["groups"]:
