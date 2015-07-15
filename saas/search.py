@@ -1,15 +1,13 @@
-import base64
-import zlib
-import sys
-import urllib
-import urllib2
-#import cjson
-import json
-import rendering
-import parser
+# -*- Encoding: utf-8
 
-SAAS_HOST = "https://saas-searchproxy-outgone.yandex.net/yandsearch?service=ruscorpora&format=json&"
-KPS = "42"
+import base64
+import sys
+
+import parser
+import rendering
+from search_response import SearchResponse
+
+KPS = "2"
 
 DEFAULT_SERP_PARAMS = {
     "p": 0,
@@ -18,80 +16,21 @@ DEFAULT_SERP_PARAMS = {
     "radius": 0,
 }
 
-def read_json(blob):
-    return json.loads(blob)
-    #return cjson.decode(blob)
-
-def read_json_from_url(url):
-    return read_json(urllib2.urlopen(url).read())
-
-
 def total_stat(kps=KPS):
-    params = urllib.urlencode((
-        ("kps", kps),
-        ("relev", "attr_limit=1000000"),
-        ("text", 'url:"*"'),
-        ("g", "1.s_url.1.0"),
-        #("info", "doccount"),
-    ))
-    url = SAAS_HOST + params
-    #print url
-    obj = read_json_from_url(url)
-    if "results" not in obj["response"]:
-        total_docs = 0
-    else:
-        total_docs = int(obj["response"]["results"][0]["found"]["all"])
-    return total_docs
+    response = SearchResponse(query='url:"*"', kps=kps, max_docs=1, docs_per_group=0)
+    return response.DocsCount()
 
 
-def extract_doc(blob):
-    return read_json(zlib.decompress(base64.b64decode(blob)))
-
-
-def extract_url(group):
-    for doc in group["documents"]:
-        return doc["properties"]["p_url"]
-    return ""
-
-
-def process_doc(doc):
-    props = doc["properties"]
-    doc_part = extract_doc(props["p_doc_part"])
-    hits_info = read_json(props["__HitsInfo"][0])
-    hits = dict()
-    for item in hits_info:
-        s = int(item["sent"]) - 1
-        w = int(item["word"]) - 1
-        if s not in hits:
-            hits[s] = set()
-        hits[s].add(w)
-    return {"Hits": hits, "Doc": doc_part, "Url": doc["url"]}
-
-
-def process_attrs(group):
-    attrs = {}
-    for doc in group["documents"]:
-        for key, value in doc["properties"].items():
-            if key.startswith("s_"):
-                key = key[2:]
-                if type(value) is list:
-                    value = value[0]
-                    #value = value.decode("utf-8")
-                attrs[key] = attrs.get(key, []) + [value]
-        break
-    return attrs
-
-
-def process_snippets(result, spd, radius):
-    doc = result["Doc"]
-    hits = result["Hits"]
-    url = result["Url"]
-    part_index = url.rsplit("#")[-1]
+def process_snippets(doc, spd, radius):
+    directIndex = doc.DirectIndex()
+    hits = doc.Hits()
+    url = doc.Url()
+    part_index = url.rsplit("#", 1)[-1]
     snippets = []
     sents = set()
     for s in sorted(hits.keys()):
         left = max(0, s - radius)
-        right = min(len(doc["Sents"]) - 1, s + radius)
+        right = min(len(directIndex["Sents"]) - 1, s + radius)
         for i in xrange(left, right + 1):
             sents.add(i)
     last_s = -2
@@ -101,7 +40,7 @@ def process_snippets(result, spd, radius):
                 break
             snippets.append([])
         last_s = s
-        sent = doc["Sents"][s]
+        sent = directIndex["Sents"][s]
         snippet = snippets[-1]
         for i, word in enumerate(sent["Words"]):
             has_hit = s in hits and i in hits[s]
@@ -113,34 +52,26 @@ def process_snippets(result, spd, radius):
 
 def process_group(group, serp_params):
     snippets = []
-    url = ""
-    for doc in group["documents"]:
-        result = process_doc(doc)
-        snippets += process_snippets(result, serp_params["spd"] - len(snippets), serp_params["radius"])
+    for doc in group.Docs():
+        snippets += process_snippets(doc, serp_params["spd"] - len(snippets), serp_params["radius"])
     return snippets
 
 
-def process(url, query_len, serp_params):
-    obj = read_json_from_url(url)
+def process(response, query_len, serp_params):
     results = []
-    stat = {"Docs": 0, "Hits": 0}
-    total_docs = total_stat()
-    stat["TotalDocs"] = total_docs
-    if "results" not in obj["response"]:
-        return results, stat
-    response_results = obj["response"]["results"][0]
     min_doc = serp_params["p"] * serp_params["dpp"]
     max_doc = min_doc + serp_params["dpp"] - 1
-    for i, group in enumerate(response_results["groups"]):
-        if not (min_doc <= i <= max_doc): continue
-        #if len(results) >= serp_params["dpp"]:
-        #    break
+    for i, group in enumerate(response.Groups()):
+        if not (min_doc <= i <= max_doc):
+            continue
         snippets = process_group(group, serp_params)
-        attrs = process_attrs(group)
-        url = extract_url(group)
+        attrs = group.Attrs()
+        url = group.Property("p_url")
         results.append({"Attrs": attrs, "Snippets": snippets, "Url": url})
-    stat["Docs"] = int(response_results["found"]["all"])
-    stat["Hits"] = int(obj["response"]["searcher_properties"]["rty_hits_count_full"]) / query_len
+    stat = {}
+    stat["Docs"] = response.DocsCount()
+    stat["Hits"] = response.HitsCount() / query_len
+    stat["TotalDocs"] = total_stat()
     return results, stat
 
 
@@ -161,40 +92,32 @@ def search(query, wfile):
     serp_params = dict(DEFAULT_SERP_PARAMS)
     serp_params["p"] = p = int(query.get("p", [0])[0])
     serp_params["dpp"] = dpp = int(query.get("dpp", [10])[0])
-    min_doc = p * dpp
-    max_doc = (p + 1) * dpp - 1
+    serp_params["spd"] = spd = int(query.get("spd", [10])[0])
 
-    params = urllib.urlencode((
-        ("text", saas_query),
-        ("kps", KPS),
-        ("relev", "attr_limit=1000000"),
-        ("rty_hits_detail", "da"),
-        ("qi", "rty_hits_count"),
-        ("qi", "rty_hits_count_full"),
-        ("fsgta", "__HitsInfo"),
-        ("fsgta", "s_url"),
-        ("g", "1.s_url.%d.10.....s_subindex.1" % (max_doc + 1)),
-        ("how", "p_sort"),
-        ("asc", "1"),
-    ))
-    url = SAAS_HOST + params
-    print >>sys.stderr, url
-    results, stat = process(url, query_len, serp_params)
+    response = SearchResponse(
+        query=saas_query,
+        kps=KPS,
+        max_docs=(p + 1) * dpp,
+        docs_per_group=spd,
+        hits_count=True,
+        hits_info=True,
+    )
+
+    results, stat = process(response, query_len, serp_params)
     rendering.render_xml(results, stat, serp_params, wfile)
 
 
 def doc_info(query, wfile):
     docid = base64.b64decode(query["docid"][0])
-    params = urllib.urlencode((
-        ("text", 'p_url:"%s"' % docid),
-        ("kps", KPS),
-        ("numdoc", "1"),
-    ))
-    url = SAAS_HOST + params
-    obj = read_json_from_url(url)
-    if "results" not in obj["response"]:
+    response = SearchResponse(
+        query='p_url:"%s"' % docid,
+        kps=KPS,
+        grouping=False,
+        max_docs=1,
+    )
+    if response.IsEmpty():
         return
-    attrs = process_attrs(obj["response"]["results"][0]["groups"][0])
+    attrs = tuple(response.Groups())[0].Attrs()
     results = [{"Attrs": attrs, "Snippets": [], "Url": docid}]
     stat = {"Docs": 1, "Hits": 0}
     rendering.render_xml(results, stat, DEFAULT_SERP_PARAMS, wfile, query_type="document-info", search_type="document-info")
@@ -204,35 +127,30 @@ def word_info(query, wfile):
     url, sent, word = base64.b64decode(query["source"][0]).rsplit("\t", 2)
     sent = int(sent)
     word = int(word)
-    params = urllib.urlencode((
-        ("text", 'url:"%s"' % url),
-        ("kps", KPS),
-        ("numdoc", "1"),
-    ))
-    url = SAAS_HOST + params
-    obj = read_json_from_url(url)
-    if "results" not in obj["response"]:
+    response = SearchResponse(
+        query='url:"%s"' % url,
+        kps=KPS,
+        grouping=False,
+        max_docs=1,
+    )
+    if response.IsEmpty():
         return
-    doc = extract_doc(obj["response"]["results"][0]["groups"][0]["documents"][0]["properties"]["p_doc_part"])
-    result = doc["Sents"][sent]["Words"][word]
+    directIndex = tuple(tuple(response.Groups())[0].Docs())[0].DirectIndex()
+    result = directIndex["Sents"][sent]["Words"][word]
     rendering.render_word_info_xml(result, wfile)
 
 
 def all_urls(kps):
-    max_int = 2**10
-    params = urllib.urlencode((
-        ("text", 'url:"*"'),
-        ("kps", kps),
-        ("numdoc", max_int),
-    ))
-    url = SAAS_HOST + params
-    print url
-    obj = read_json_from_url(url)
+    response = SearchResponse(
+        query='url:"*"',
+        kps=kps,
+        grouping=False,
+        max_docs=2**10,
+    )
     result = []
-    for result in obj["response"]["results"]:
-        for group in result["groups"]:
-            for doc in group["documents"]:
-                result.append(doc["url"])
+    for group in response.Groups():
+        for doc in group.Docs():
+            result.append(doc.Url())
     return result
 
 
